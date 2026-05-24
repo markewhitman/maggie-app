@@ -1,0 +1,180 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── MAGGIE — Earthy Yellow-Forward Palette ───────────────────────── */
+:root {
+  /* Warm yellow-amber primary */
+  --primary: 43 85% 48%;           /* amber-gold */
+  --primary-foreground: 30 20% 8%; /* near-black on yellow */
+  --primary-hover: 43 85% 42%;
+
+  /* Warm earthy surfaces */
+  --background: 42 30% 97%;        /* warm off-white */
+  --foreground: 30 20% 12%;        /* dark walnut */
+  --card: 40 28% 94%;              /* warm cream card */
+  --card-foreground: 30 20% 12%;
+  --popover: 40 28% 96%;
+  --popover-foreground: 30 20% 12%;
+
+  /* Borders and muted */
+  --border: 38 25% 82%;            /* warm tan border */
+  --input: 38 25% 82%;
+  --muted: 38 20% 90%;             /* warm muted bg */
+  --muted-foreground: 30 15% 45%;  /* medium warm gray */
+  --ring: 43 85% 55%;
+
+  /* Semantic */
+  --accent: 22 70% 50%;            /* warm terra-cotta accent */
+  --accent-foreground: 30 20% 97%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --secondary: 38 22% 88%;
+  --secondary-foreground: 30 20% 20%;
+
+  /* Chart colors */
+  --chart-1: 43 85% 48%;
+  --chart-2: 22 70% 50%;
+  --chart-3: 160 50% 40%;
+  --chart-4: 200 55% 45%;
+  --chart-5: 300 40% 45%;
+
+  /* Custom app tokens */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --radius: 0.5rem;
+
+  /* Stage/gig mode overlay */
+  --stage-bg: 30 20% 6%;
+  --stage-card: 30 18% 10%;
+  --stage-accent: 43 90% 52%;
+  --stage-text: 42 30% 92%;
+}
+
+.dark {
+  --background: 30 20% 8%;
+  --foreground: 42 25% 92%;
+  --card: 30 18% 11%;
+  --card-foreground: 42 25% 92%;
+  --popover: 30 18% 11%;
+  --popover-foreground: 42 25% 92%;
+  --border: 30 15% 22%;
+  --input: 30 15% 22%;
+  --muted: 30 15% 15%;
+  --muted-foreground: 38 15% 55%;
+  --ring: 43 85% 55%;
+  --primary: 43 85% 55%;
+  --primary-foreground: 30 20% 8%;
+  --primary-hover: 43 85% 62%;
+  --secondary: 30 15% 18%;
+  --secondary-foreground: 42 25% 85%;
+  --accent: 22 70% 58%;
+  --accent-foreground: 30 20% 97%;
+  --destructive: 0 63% 45%;
+  --destructive-foreground: 0 0% 98%;
+}
+
+/* ── BASE ──────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── TYPOGRAPHY ────────────────────────────────────────────────────── */
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* ── CAPO BADGE ─────────────────────────────────────────────────────── */
+.capo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.capo-badge.no-capo {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-weight: 500;
+}
+
+/* ── SONG CARD ──────────────────────────────────────────────────────── */
+.song-card {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.song-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+/* ── STAGE MODE ─────────────────────────────────────────────────────── */
+.stage-mode {
+  background: hsl(var(--stage-bg)) !important;
+  color: hsl(var(--stage-text)) !important;
+}
+
+/* ── STRUMMING PATTERN ──────────────────────────────────────────────── */
+.strum-char {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.strum-D { background: hsl(43 85% 88%); color: hsl(43 85% 25%); }
+.strum-U { background: hsl(22 70% 88%); color: hsl(22 70% 25%); }
+.strum-d { background: hsl(43 85% 93%); color: hsl(43 85% 30%); }
+.strum-u { background: hsl(22 70% 93%); color: hsl(22 70% 30%); }
+
+/* dark mode strums */
+.dark .strum-D { background: hsl(43 50% 22%); color: hsl(43 85% 75%); }
+.dark .strum-U { background: hsl(22 50% 22%); color: hsl(22 70% 75%); }
+.dark .strum-d { background: hsl(43 50% 18%); color: hsl(43 85% 65%); }
+.dark .strum-u { background: hsl(22 50% 18%); color: hsl(22 70% 65%); }
+
+/* ── DRAG HANDLE ────────────────────────────────────────────────────── */
+.drag-handle {
+  cursor: grab;
+  opacity: 0.4;
+  transition: opacity 100ms;
+}
+.drag-handle:hover { opacity: 0.8; }
+.drag-handle:active { cursor: grabbing; }
+
+/* ── AUDIENCE VIEW ──────────────────────────────────────────────────── */
+.audience-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  transition: transform 100ms, box-shadow 100ms;
+}
+.audience-card:active {
+  transform: scale(0.98);
+}
+
+/* ── SCROLLBAR ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
