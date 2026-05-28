@@ -17,7 +17,7 @@ This guide reflects the current app architecture: the frontend is hosted on GitH
 | PDF files | Supabase Storage `pdfs` bucket |
 | Song-to-PDF mapping | Supabase `song_pdfs` table |
 | Seed songs and user-added songs | Browser `localStorage` for now |
-| Performance notes | Browser `localStorage` in the current UI; Supabase helper exists but is not fully wired |
+| Performance notes | Supabase `perf_notes` table in Stage and song history views |
 
 The app currently uses a shared single-user Supabase identity in `client/src/lib/supabase.ts`. That is suitable for a private personal app only. A commercial release needs authentication, per-user tenancy, RLS policies, and private/scoped audience routes.
 
@@ -99,7 +99,7 @@ The audience route is currently:
 https://YOUR_USERNAME.github.io/maggie-app/#/audience
 ```
 
-Note: the current audience route still shares the main app layout. Before sharing publicly, split it into a request-only public route with no admin navigation.
+Note: the audience route now uses a request-only public layout with no admin navigation. It still needs gig-scoped URLs and database policies before broad public use.
 
 ---
 
@@ -144,9 +144,9 @@ The legacy GitHub Release Asset/PAT workflow is no longer used by Add Song. Some
 These are intentional current-state notes, not deployment steps:
 
 - User-added songs still live in `localStorage`.
-- Performance notes still live in `localStorage` in the current UI.
-- Dashboard and Stage still contain some local setlist paths that should be migrated fully to Supabase.
+- Setlist quick-add, Stage edits, venues, active sessions, PDFs, requests, and performance notes now use Supabase from the UI.
 - Audience requests are not yet gig-scoped.
+- `gig_start_time` is still stripped before cloud setlist writes unless the Supabase column exists and the client is updated.
 - There is no authentication or commercial-grade tenancy yet.
 - Supabase RLS and bucket policies are not represented in this repository.
 

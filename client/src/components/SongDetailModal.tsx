@@ -2,9 +2,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import type { Song } from "@/lib/data";
-import { perfNotesStore, songsStore, formatDuration } from "@/lib/data";
-import { sbPdfs, sbSongPdfs } from "@/lib/supabase";
+import type { Song, PerformanceNote } from "@/lib/data";
+import { songsStore, formatDuration } from "@/lib/data";
+import { sbPdfs, sbSongPdfs, sbPerfNotes, type SbPerfNote } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,21 @@ const DIFF_COLORS: Record<string, string> = {
   Intermediate: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   Advanced: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
+
+
+function sbToPerfNote(r: SbPerfNote): PerformanceNote {
+  return {
+    id: r.id,
+    setlistId: r.setlist_id,
+    songId: r.song_id,
+    gigDate: r.gig_date ?? undefined,
+    crowdReaction: r.crowd_reaction,
+    tempoFeel: r.tempo_feel as PerformanceNote["tempoFeel"],
+    lyricsConfidence: r.lyrics_confidence as PerformanceNote["lyricsConfidence"],
+    notes: r.notes,
+    createdAt: r.created_at,
+  };
+}
 
 function StarRating({ value }: { value: number }) {
   return (
@@ -228,10 +243,9 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
   const [fullscreenPdf, setFullscreenPdf] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [perfHistory, setPerfHistory] = useState<PerformanceNote[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-
-  const perfHistory = perfNotesStore.getForSong(song.id);
 
   // On open: load pdfUrl from Supabase in case it was uploaded on another device
   useEffect(() => {
@@ -243,6 +257,14 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
         setSong(patched);
       }
     }).catch(() => {/* network error — use localStorage value */});
+  }, [initialSong.id]);
+
+  // Load synced performance history for this song.
+  useEffect(() => {
+    sbPerfNotes
+      .getForSong(initialSong.id)
+      .then((rows) => setPerfHistory(rows.map(sbToPerfNote)))
+      .catch(() => setPerfHistory([]));
   }, [initialSong.id]);
 
   const refreshSong = () => {
@@ -285,6 +307,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
   };
 
   const handleDeletePdf = async () => {
+    if (!window.confirm("Remove this PDF from the song?")) return;
     try {
       await sbPdfs.deleteForSong(song.id);
       await sbSongPdfs.remove(song.id);

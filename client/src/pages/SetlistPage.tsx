@@ -559,6 +559,7 @@ export default function SetlistPage() {
   };
 
   const clearSession = async () => {
+    if (!window.confirm("Clear the active set from Stage?")) return;
     await sbSession.clear();
     setHasActiveSession(false);
     setActiveSessionCount(0);
@@ -566,6 +567,7 @@ export default function SetlistPage() {
 
   // ─── Delete setlist ───────────────────────────────────────
   const deleteSetlist = async (id: string) => {
+    if (!window.confirm("Delete this setlist? This cannot be undone.")) return;
     setSyncing(true);
     try {
       await sbSetlists.delete(id);

@@ -149,6 +149,7 @@ export default function VenuesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this venue? This cannot be undone.")) return;
     try {
       await sbVenues.delete(id);
       setVenues((prev) => prev.filter((v) => v.id !== id));

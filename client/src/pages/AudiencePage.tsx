@@ -255,14 +255,17 @@ export default function AudiencePage() {
       toast({ title: "Already requested!", description: `${song.title} is in the queue` });
       return;
     }
-    // Optimistically update local state
-    setRequests((prev) => [...prev, { songId: song.id, timestamp: Date.now() }]);
-    toast({ title: "Request sent!", description: `${song.title} has been requested` });
-    // Write to Supabase so stage manager sees it
+
     try {
       await sbRequests.submit(song.id, song.title);
-    } catch {
-      // Request still shows locally even if network fails
+      setRequests((prev) => [...prev, { songId: song.id, timestamp: Date.now() }]);
+      toast({ title: "Request sent!", description: `${song.title} has been requested` });
+    } catch (err: any) {
+      toast({
+        title: "Failed to send request",
+        description: err?.message ?? "Please check your connection and try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -359,7 +362,7 @@ export default function AudiencePage() {
         {/* Welcome */}
         <div className="text-center py-3 mb-3">
           <h1 className="font-display font-bold text-2xl italic text-primary mb-1">Request a Song</h1>
-          <p className="text-sm text-muted-foreground">Tap any song to send a request · tap again to expand</p>
+          <p className="text-sm text-muted-foreground">Tap a song to request it · use the row below each song for details</p>
         </div>
 
         {/* Search */}

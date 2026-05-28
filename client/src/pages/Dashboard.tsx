@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Song, Setlist } from "@/lib/data";
-import { songsStore, setlistsStore } from "@/lib/data";
+import { songsStore } from "@/lib/data";
+import { sbSetlists, type SbSetlist } from "@/lib/supabase";
 import { SongCard } from "@/components/SongCard";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { AddSongModal } from "@/components/AddSongModal";
@@ -10,6 +11,19 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+
+function sbToSetlist(r: SbSetlist): Setlist {
+  return {
+    id: r.id,
+    name: r.name,
+    gigDate: r.gig_date ?? undefined,
+    gigStartTime: r.gig_start_time ?? undefined,
+    venueId: r.venue_id ?? undefined,
+    songIds: r.song_ids,
+    createdAt: r.created_at,
+  };
+}
 
 // ─── Filter definitions ────────────────────────────────────
 // Genre labels mapped from slug → display
@@ -108,20 +122,43 @@ export default function Dashboard() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [showAddSong, setShowAddSong] = useState(false);
   const [addToSetlistSong, setAddToSetlistSong] = useState<Song | null>(null);
-  const [setlists, setSetlists] = useState<Setlist[]>(() => setlistsStore.getAll());
+  const [setlists, setSetlists] = useState<Setlist[]>([]);
   const { toast } = useToast();
 
-  const handleAddToSetlist = (setlistId: string, song: Song) => {
+  useEffect(() => {
+    sbSetlists
+      .getAll()
+      .then((rows) => setSetlists(rows.map(sbToSetlist)))
+      .catch(() => {
+        toast({
+          title: "Setlists unavailable",
+          description: "Could not load cloud setlists for quick add.",
+          variant: "destructive",
+        });
+      });
+  }, []);
+
+  const handleAddToSetlist = async (setlistId: string, song: Song) => {
     const setlist = setlists.find((s) => s.id === setlistId);
     if (!setlist) return;
     if (setlist.songIds.includes(song.id)) {
       toast({ title: "Already in setlist", description: `${song.title} is already in "${setlist.name}"` });
       return;
     }
-    setlistsStore.update(setlistId, { songIds: [...setlist.songIds, song.id] });
-    setSetlists(setlistsStore.getAll());
-    toast({ title: "Added to setlist", description: `${song.title} added to "${setlist.name}"` });
-    setAddToSetlistSong(null);
+
+    const songIds = [...setlist.songIds, song.id];
+    try {
+      await sbSetlists.update(setlistId, { song_ids: songIds });
+      setSetlists((prev) => prev.map((sl) => (sl.id === setlistId ? { ...sl, songIds } : sl)));
+      toast({ title: "Added to setlist", description: `${song.title} added to "${setlist.name}"` });
+      setAddToSetlistSong(null);
+    } catch (err: any) {
+      toast({
+        title: "Could not update setlist",
+        description: err?.message ?? "The cloud save failed. Try again when you are online.",
+        variant: "destructive",
+      });
+    }
   };
 
   const refresh = () => setSongs(songsStore.getAll());
@@ -341,6 +378,7 @@ export default function Dashboard() {
           song={selectedSong}
           onClose={() => { setSelectedSong(null); refresh(); }}
           onDelete={(id) => {
+            if (!window.confirm("Delete this song from your library? This cannot be undone.")) return;
             songsStore.delete(id);
             refresh();
             setSelectedSong(null);

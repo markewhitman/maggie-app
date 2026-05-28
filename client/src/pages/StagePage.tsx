@@ -6,8 +6,8 @@ import {
   SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { songsStore, setlistsStore, perfNotesStore, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
-import { sbSession, sbRequests, sbSongPdfs, type SbRequest } from "@/lib/supabase";
+import { songsStore, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
+import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, type SbRequest, type SbPerfNote } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { FullscreenPdfViewer } from "@/components/FullscreenPdfViewer";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,39 @@ interface Session {
   skippedIds: string[];
 }
 
+
+function uid(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sbToPerfNote(r: SbPerfNote): PerformanceNote {
+  return {
+    id: r.id,
+    setlistId: r.setlist_id,
+    songId: r.song_id,
+    gigDate: r.gig_date ?? undefined,
+    crowdReaction: r.crowd_reaction,
+    tempoFeel: r.tempo_feel as PerformanceNote["tempoFeel"],
+    lyricsConfidence: r.lyrics_confidence as PerformanceNote["lyricsConfidence"],
+    notes: r.notes,
+    createdAt: r.created_at,
+  };
+}
+
+function perfNoteToSb(note: PerformanceNote): Omit<SbPerfNote, "user_id"> {
+  return {
+    id: note.id,
+    setlist_id: note.setlistId,
+    song_id: note.songId,
+    gig_date: note.gigDate ?? null,
+    crowd_reaction: note.crowdReaction,
+    tempo_feel: note.tempoFeel,
+    lyrics_confidence: note.lyricsConfidence,
+    notes: note.notes,
+    created_at: note.createdAt,
+  };
+}
+
 async function saveSession(session: Session) {
   await sbSession.save({
     setlist_id: session.setlistId,
@@ -45,24 +78,52 @@ async function saveSession(session: Session) {
 // ─── Performance Note Modal ───────────────────────────────
 
 function PerfNoteModal({
-  song, setlistId, gigDate, existing, onClose,
+  song, setlistId, gigDate, existing, onSaved, onClose,
 }: {
-  song: Song; setlistId: string; gigDate?: string; existing?: PerformanceNote; onClose: () => void;
+  song: Song;
+  setlistId: string;
+  gigDate?: string;
+  existing?: PerformanceNote;
+  onSaved: (note: PerformanceNote) => void;
+  onClose: () => void;
 }) {
   const { toast } = useToast();
   const [crowdReaction, setCrowdReaction] = useState(existing?.crowdReaction ?? 3);
   const [tempoFeel, setTempoFeel] = useState<PerformanceNote["tempoFeel"]>(existing?.tempoFeel ?? "Spot-on");
   const [lyricsConfidence, setLyricsConfidence] = useState<PerformanceNote["lyricsConfidence"]>(existing?.lyricsConfidence ?? "Good");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    if (existing) {
-      perfNotesStore.upsert({ ...existing, crowdReaction, tempoFeel, lyricsConfidence, notes });
-    } else {
-      perfNotesStore.create({ setlistId, songId: song.id, gigDate, crowdReaction, tempoFeel, lyricsConfidence, notes });
+  const handleSave = async () => {
+    const note: PerformanceNote = existing
+      ? { ...existing, crowdReaction, tempoFeel, lyricsConfidence, notes }
+      : {
+          id: uid(),
+          setlistId,
+          songId: song.id,
+          gigDate,
+          crowdReaction,
+          tempoFeel,
+          lyricsConfidence,
+          notes,
+          createdAt: new Date().toISOString(),
+        };
+
+    setSaving(true);
+    try {
+      await sbPerfNotes.upsert(perfNoteToSb(note));
+      onSaved(note);
+      toast({ title: "Notes saved!" });
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "Notes not saved",
+        description: err?.message ?? "Could not save performance notes to the cloud.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    toast({ title: "Notes saved!" });
-    onClose();
   };
 
   return (
@@ -113,7 +174,7 @@ function PerfNoteModal({
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Crowd loved it, key change tricky, nail the bridge…" rows={3} />
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleSave} className="flex-1">Save Notes</Button>
+            <Button onClick={handleSave} className="flex-1" disabled={saving}>{saving ? "Saving…" : "Save Notes"}</Button>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
           </div>
         </div>
@@ -575,6 +636,7 @@ export default function StagePage() {
   const [showEditSetlist, setShowEditSetlist] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [requests, setRequests] = useState<SbRequest[]>([]);
+  const [perfNotes, setPerfNotes] = useState<PerformanceNote[]>([]);
   const [pdfMap, setPdfMap] = useState<Record<string, { url: string; name: string }>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -616,6 +678,18 @@ export default function StagePage() {
     sbSongPdfs.getAll().then(setPdfMap).catch(() => {});
   }, []);
 
+  // Load synced performance notes for the active setlist
+  useEffect(() => {
+    if (!session?.setlistId) {
+      setPerfNotes([]);
+      return;
+    }
+    sbPerfNotes
+      .getForSetlist(session.setlistId)
+      .then((rows) => setPerfNotes(rows.map(sbToPerfNote)))
+      .catch(() => setPerfNotes([]));
+  }, [session?.setlistId]);
+
   // Poll for audience requests every 30 s
   useEffect(() => {
     const fetchRequests = () => {
@@ -635,6 +709,13 @@ export default function StagePage() {
       if (!alreadyIn) {
         const newIds = [...session.orderedSongIds, req.song_id];
         updateSession({ orderedSongIds: newIds });
+        sbSetlists.update(session.setlistId, { song_ids: newIds }).catch(() => {
+          toast({
+            title: "Active set updated only",
+            description: "The request was added tonight, but the saved setlist did not sync.",
+            variant: "destructive",
+          });
+        });
         toast({ title: "Added to setlist!", description: `“${req.song_title}” added to the end of the set` });
       } else {
         toast({ title: "Approved", description: `“${req.song_title}” is already in the set` });
@@ -705,19 +786,36 @@ export default function StagePage() {
     }
   };
 
-  const clearSession = () => {
-    sbSession.clear(); // async, fire-and-forget
-    setSessionState(null);
+  const clearSession = async () => {
+    if (!window.confirm("End the active set? This clears the loaded Stage session.")) return;
+    try {
+      await sbSession.clear();
+      setSessionState(null);
+      toast({ title: "Set ended" });
+    } catch (err: any) {
+      toast({
+        title: "Could not end set",
+        description: err?.message ?? "The active session was not cleared.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleEditSave = (newIds: string[]) => {
+  const handleEditSave = async (newIds: string[]) => {
     updateSession({ orderedSongIds: newIds });
-    // Also update the saved setlist
     if (session) {
-      setlistsStore.update(session.setlistId, { songIds: newIds });
+      try {
+        await sbSetlists.update(session.setlistId, { song_ids: newIds });
+        toast({ title: "Setlist updated!" });
+      } catch (err: any) {
+        toast({
+          title: "Active set updated only",
+          description: err?.message ?? "The saved cloud setlist did not update.",
+          variant: "destructive",
+        });
+      }
     }
     setShowEditSetlist(false);
-    toast({ title: "Setlist updated!" });
   };
 
   if (sessionLoading) {
@@ -987,7 +1085,13 @@ export default function StagePage() {
           song={noteModalSong}
           setlistId={session.setlistId}
           gigDate={undefined}
-          existing={perfNotesStore.getForSetlist(session.setlistId).find((n) => n.songId === noteModalSong.id)}
+          existing={perfNotes.find((n) => n.songId === noteModalSong.id)}
+          onSaved={(saved) => {
+            setPerfNotes((prev) => {
+              const exists = prev.some((n) => n.id === saved.id);
+              return exists ? prev.map((n) => (n.id === saved.id ? saved : n)) : [saved, ...prev];
+            });
+          }}
           onClose={() => setNoteModalSong(null)}
         />
       )}
@@ -1029,7 +1133,20 @@ export default function StagePage() {
           onApprove={handleApprove}
           onDeny={handleDeny}
           onSuggest={handleSuggestAlternative}
-          onClearAll={async () => { await sbRequests.clearAll(); setRequests([]); }}
+          onClearAll={async () => {
+            if (!window.confirm("Clear every pending audience request?")) return;
+            try {
+              await sbRequests.clearAll();
+              setRequests([]);
+              toast({ title: "Requests cleared" });
+            } catch (err: any) {
+              toast({
+                title: "Could not clear requests",
+                description: err?.message ?? "The request queue was not cleared.",
+                variant: "destructive",
+              });
+            }
+          }}
           onClose={() => setShowRequests(false)}
         />
       )}

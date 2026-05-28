@@ -191,7 +191,20 @@ export const sbPerfNotes = {
       .from("perf_notes")
       .select("*")
       .eq("user_id", userId)
-      .eq("setlist_id", setlistId);
+      .eq("setlist_id", setlistId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async getForSong(songId: string): Promise<SbPerfNote[]> {
+    const userId = getDeviceId();
+    const { data, error } = await supabase
+      .from("perf_notes")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("song_id", songId)
+      .order("created_at", { ascending: false });
     if (error) throw error;
     return data ?? [];
   },
@@ -302,12 +315,13 @@ export interface SbRequest {
 export const sbRequests = {
   /** Audience submits a known song request */
   async submit(songId: string, songTitle: string): Promise<void> {
-    await supabase.from("song_requests").insert({
+    const { error } = await supabase.from("song_requests").insert({
       song_id: songId,
       song_title: songTitle,
       status: "pending",
       is_write_in: false,
     });
+    if (error) throw new Error(error.message);
   },
 
   /** Audience or artist submits a write-in (song not in catalogue) */
@@ -368,7 +382,11 @@ export const sbRequests = {
   },
 
   async clearAll(): Promise<void> {
-    await supabase.from("song_requests").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase
+      .from("song_requests")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) throw new Error(error.message);
   },
 };
 

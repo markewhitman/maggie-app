@@ -1,7 +1,7 @@
 {
   "name": "maggie-app",
   "version": "1.0.0",
-  "homepage": "https://markewhitman.github.io/maggie-app",
+  "homepage": "https://YOUR_GITHUB_USERNAME.github.io/maggie-app",
   "license": "MIT",
   "type": "module",
   "scripts": {
