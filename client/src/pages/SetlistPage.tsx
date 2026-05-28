@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
-  Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag,
+  Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag, Link2,
 } from "lucide-react";
 
 // ─── Helpers: map Supabase rows ↔ local types ─────────────
@@ -49,6 +49,11 @@ function sbToVenue(r: SbVenue): Venue {
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function audienceUrlForSetlist(setlistId: string): string {
+  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(setlistId)}`;
+  return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(setlistId)}`;
 }
 
 // ─── Sortable Item ────────────────────────────────────────
@@ -271,7 +276,7 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
 // ─── Setlist Card ─────────────────────────────────────────
 
 function SetlistCard({
-  setlist, songs, venues, onDelete, onLoad, onEdit,
+  setlist, songs, venues, onDelete, onLoad, onEdit, onCopyAudienceLink,
 }: {
   setlist: Setlist;
   songs: Song[];
@@ -279,6 +284,7 @@ function SetlistCard({
   onDelete: () => void;
   onLoad: () => void;
   onEdit: () => void;
+  onCopyAudienceLink: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const venue = venues.find((v) => v.id === setlist.venueId);
@@ -319,6 +325,9 @@ function SetlistCard({
           <div className="flex items-center gap-1 shrink-0">
             <Button size="sm" onClick={onLoad} className="gap-1.5 text-xs h-8">
               <Mic2 className="w-3.5 h-3.5" /> Load Tonight
+            </Button>
+            <Button variant="outline" size="sm" onClick={onCopyAudienceLink} className="gap-1.5 text-xs h-8" title="Copy audience request link">
+              <Link2 className="w-3.5 h-3.5" /> Audience Link
             </Button>
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onEdit} title="Edit setlist">
               <Pencil className="w-3.5 h-3.5" />
@@ -593,6 +602,19 @@ export default function SetlistPage() {
     }
   };
 
+  const copyAudienceLink = async (setlist: Setlist) => {
+    const url = audienceUrlForSetlist(setlist.id);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Audience link copied", description: "Share this QR/link for this specific gig." });
+    } catch {
+      toast({
+        title: "Audience link",
+        description: url,
+      });
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────
   return (
     <div>
@@ -650,6 +672,7 @@ export default function SetlistPage() {
               onDelete={() => deleteSetlist(sl.id)}
               onLoad={() => loadSetlist(sl)}
               onEdit={() => openEdit(sl)}
+              onCopyAudienceLink={() => copyAudienceLink(sl)}
             />
           ))}
         </div>

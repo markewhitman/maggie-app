@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { QRCodeSVG as QRCode } from "qrcode.react";
 import { songsStore, type Song } from "@/lib/data";
-import { sbRequests } from "@/lib/supabase";
+import { sbRequests, sbSession } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -206,10 +207,22 @@ function AudienceSongCard({
   );
 }
 
+function buildAudienceUrl(gigId: string): string {
+  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(gigId)}`;
+  return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(gigId)}`;
+}
+
 // ─── Main Page ────────────────────────────────────────────
 
 export default function AudiencePage() {
   const songs = useMemo(() => songsStore.getAll(), []);
+  const [location] = useLocation();
+  const routeGigId = useMemo(() => {
+    const match = location.match(/^\/audience\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }, [location]);
+  const [activeGigId, setActiveGigId] = useState<string | null>(routeGigId);
+  const effectiveGigId = routeGigId ?? activeGigId;
   const [search, setSearch] = useState("");
   const [requests, setRequests] = useState<Request[]>([]);
   const [showQR, setShowQR] = useState(false);
@@ -220,6 +233,18 @@ export default function AudiencePage() {
   const [writeIn, setWriteIn] = useState("");
   const [writeInSubmitting, setWriteInSubmitting] = useState(false);
   const { toast } = useToast();
+
+  // If someone opens the generic #/audience route, automatically bind it to
+  // the currently loaded Stage set. Explicit #/audience/:gigId links stay fixed.
+  useEffect(() => {
+    if (routeGigId) {
+      setActiveGigId(routeGigId);
+      return;
+    }
+    sbSession.get()
+      .then((session) => setActiveGigId(session?.setlist_id ?? null))
+      .catch(() => setActiveGigId(null));
+  }, [routeGigId]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -257,7 +282,7 @@ export default function AudiencePage() {
     }
 
     try {
-      await sbRequests.submit(song.id, song.title);
+      await sbRequests.submit(song.id, song.title, effectiveGigId);
       setRequests((prev) => [...prev, { songId: song.id, timestamp: Date.now() }]);
       toast({ title: "Request sent!", description: `${song.title} has been requested` });
     } catch (err: any) {
@@ -275,7 +300,7 @@ export default function AudiencePage() {
     if (!writeIn.trim()) return;
     setWriteInSubmitting(true);
     try {
-      const { error } = await sbRequests.submitWriteInSafe(writeIn.trim());
+      const { error } = await sbRequests.submitWriteInSafe(writeIn.trim(), effectiveGigId);
       if (error) throw new Error(error.message);
       setRequests((prev) => [...prev, { songId: `write-in-${Date.now()}`, timestamp: Date.now() }]);
       toast({ title: "Request sent!", description: `“${writeIn.trim()}” has been requested` });
@@ -288,7 +313,7 @@ export default function AudiencePage() {
     }
   };
 
-  const qrUrl = typeof window !== "undefined" ? window.location.href : "";
+  const qrUrl = effectiveGigId ? buildAudienceUrl(effectiveGigId) : (typeof window !== "undefined" ? window.location.href : "");
 
   const toggleFilter = (key: string, val: string) => {
     setActiveFilters((prev) => ({
@@ -363,6 +388,11 @@ export default function AudiencePage() {
         <div className="text-center py-3 mb-3">
           <h1 className="font-display font-bold text-2xl italic text-primary mb-1">Request a Song</h1>
           <p className="text-sm text-muted-foreground">Tap a song to request it · use the row below each song for details</p>
+          {effectiveGigId ? (
+            <p className="text-[11px] text-muted-foreground/70 mt-1">Requests are linked to tonight’s active set.</p>
+          ) : (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">No active set detected — requests may go to the general queue.</p>
+          )}
         </div>
 
         {/* Search */}

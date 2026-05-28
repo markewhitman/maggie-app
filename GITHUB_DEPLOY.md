@@ -93,13 +93,14 @@ The app will be available at:
 https://YOUR_USERNAME.github.io/maggie-app
 ```
 
-The audience route is currently:
+The audience routes are:
 
 ```text
 https://YOUR_USERNAME.github.io/maggie-app/#/audience
+https://YOUR_USERNAME.github.io/maggie-app/#/audience/<setlistId>
 ```
 
-Note: the audience route now uses a request-only public layout with no admin navigation. It still needs gig-scoped URLs and database policies before broad public use.
+Use the **Audience Link** button on a setlist to copy the scoped link for that gig. The generic `#/audience` route will try to bind to the currently loaded Stage set.
 
 ---
 
@@ -125,6 +126,14 @@ The code expects these Supabase resources to exist:
 
 For commercial use, the `pdfs` bucket should be private with signed URLs, and all tables/storage objects should be protected by RLS.
 
+Apply the Phase 3 migration before relying on scoped audience requests:
+
+```text
+supabase/migrations/20260528_phase3_gig_scoped_requests.sql
+```
+
+See `docs/PHASE3_SUPABASE_SECURITY.md` for the remaining personal-MVP versus commercial security gap.
+
 ---
 
 ## 7. PDF storage
@@ -145,8 +154,8 @@ These are intentional current-state notes, not deployment steps:
 
 - User-added songs still live in `localStorage`.
 - Setlist quick-add, Stage edits, venues, active sessions, PDFs, requests, and performance notes now use Supabase from the UI.
-- Audience requests are not yet gig-scoped.
-- `gig_start_time` is still stripped before cloud setlist writes unless the Supabase column exists and the client is updated.
+- Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
+- `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.
 - There is no authentication or commercial-grade tenancy yet.
-- Supabase RLS and bucket policies are not represented in this repository.
+- The included RLS migration is a personal-MVP baseline. It is not a commercial-grade auth/tenant model.
 

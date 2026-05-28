@@ -486,9 +486,10 @@ const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function RequestsPanel({
-  requests, songs, onApprove, onDeny, onSuggest, onClearAll, onClose,
+  requests, songs, gigId, onApprove, onDeny, onSuggest, onClearAll, onClose,
 }: {
   requests: SbRequest[];
+  gigId?: string | null;
   songs: Song[];
   onApprove: (r: SbRequest) => void;
   onDeny: (r: SbRequest) => void;
@@ -504,7 +505,7 @@ function RequestsPanel({
   const loadLog = async () => {
     setLogLoading(true);
     try {
-      const data = await sbRequests.getLog();
+      const data = await sbRequests.getLog(gigId);
       setLog(data);
     } finally {
       setLogLoading(false);
@@ -529,6 +530,7 @@ function RequestsPanel({
         <DialogHeader className="shrink-0">
           <DialogTitle className="font-display italic flex items-center gap-2">
             <Bell className="w-4 h-4" /> Audience Requests
+            {gigId && <span className="text-[10px] text-muted-foreground font-normal">Scoped to active set</span>}
             {requests.length > 0 && (
               <Badge className="bg-primary text-primary-foreground ml-1">{requests.length}</Badge>
             )}
@@ -741,15 +743,17 @@ export default function StagePage() {
       .catch(() => setPerfNotes([]));
   }, [session?.setlistId]);
 
-  // Poll for audience requests every 30 s
+  // Poll for audience requests every 30 s. When an active set is loaded,
+  // only show requests that were submitted through that set's audience link.
   useEffect(() => {
+    const activeGigId = session?.setlistId ?? null;
     const fetchRequests = () => {
-      sbRequests.getPending().then(setRequests).catch(() => {});
+      sbRequests.getPending(activeGigId).then(setRequests).catch(() => {});
     };
     fetchRequests();
     pollRef.current = setInterval(fetchRequests, 30000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+  }, [session?.setlistId]);
 
   const handleApprove = async (req: SbRequest) => {
     await sbRequests.resolve(req, "approved");
@@ -1189,6 +1193,7 @@ export default function StagePage() {
         <RequestsPanel
           requests={requests}
           songs={songs}
+          gigId={session?.setlistId ?? null}
           onApprove={handleApprove}
           onDeny={handleDeny}
           onSuggest={handleSuggestAlternative}
@@ -1201,7 +1206,7 @@ export default function StagePage() {
             });
             if (!confirmed) return;
             try {
-              await sbRequests.clearAll();
+              await sbRequests.clearAll(session?.setlistId ?? null);
               setRequests([]);
               toast({ title: "Requests cleared" });
             } catch (err: any) {

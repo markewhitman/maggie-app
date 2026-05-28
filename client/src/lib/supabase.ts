@@ -1,6 +1,6 @@
 // ============================================================
 // Maggie App — Supabase Client
-// Cross-device sync for setlists, venues, and performance notes
+// Cross-device sync for setlists, venues, requests, PDFs, and performance notes
 // ============================================================
 
 import { createClient } from "@supabase/supabase-js";
@@ -20,6 +20,17 @@ const SHARED_USER_ID = "maggie-whitman-app-2026";
 
 export function getDeviceId(): string {
   return SHARED_USER_ID;
+}
+
+function isMissingColumnError(error: any): boolean {
+  const message = String(error?.message ?? "").toLowerCase();
+  return (
+    error?.code === "PGRST204" ||
+    error?.code === "42703" ||
+    message.includes("could not find") ||
+    message.includes("schema cache") ||
+    message.includes("column")
+  );
 }
 
 // ─── Types (Supabase row shapes) ──────────────────────────
@@ -83,23 +94,43 @@ export const sbSetlists = {
 
   async save(setlist: Omit<SbSetlist, "user_id">): Promise<void> {
     const userId = getDeviceId();
-    // Strip gig_start_time — column doesn't exist in DB; stored in localStorage only
-    const { gig_start_time: _drop, ...rest } = setlist;
+    const payload = { ...setlist, user_id: userId };
     const { error } = await supabase
       .from("setlists")
-      .upsert({ ...rest, user_id: userId }, { onConflict: "id" });
+      .upsert(payload, { onConflict: "id" });
+
+    // Backward-compatible fallback for older Supabase projects that do not yet
+    // have the gig_start_time column. After applying the Phase 3 migration, the
+    // first write path above will persist start time cross-device.
+    if (error && isMissingColumnError(error) && "gig_start_time" in payload) {
+      const { gig_start_time: _drop, ...legacyPayload } = payload;
+      const retry = await supabase
+        .from("setlists")
+        .upsert(legacyPayload, { onConflict: "id" });
+      if (retry.error) throw retry.error;
+      return;
+    }
     if (error) throw error;
   },
 
   async update(id: string, data: Partial<Omit<SbSetlist, "id" | "user_id" | "created_at">>): Promise<void> {
     const userId = getDeviceId();
-    // Strip gig_start_time — column doesn't exist in DB; stored in localStorage only
-    const { gig_start_time: _drop, ...rest } = data;
     const { error } = await supabase
       .from("setlists")
-      .update(rest)
+      .update(data)
       .eq("id", id)
       .eq("user_id", userId);
+
+    if (error && isMissingColumnError(error) && "gig_start_time" in data) {
+      const { gig_start_time: _drop, ...legacyData } = data;
+      const retry = await supabase
+        .from("setlists")
+        .update(legacyData)
+        .eq("id", id)
+        .eq("user_id", userId);
+      if (retry.error) throw retry.error;
+      return;
+    }
     if (error) throw error;
   },
 
@@ -305,6 +336,7 @@ export const sbSongPdfs = {
 
 export interface SbRequest {
   id: string;
+  gig_id?: string | null;
   song_id: string | null;
   song_title: string;
   is_write_in?: boolean;
@@ -312,57 +344,95 @@ export interface SbRequest {
   created_at: string;
 }
 
+async function insertRequestWithFallback(payload: Record<string, any>, gigId?: string | null): Promise<void> {
+  const scopedPayload = gigId ? { ...payload, gig_id: gigId } : payload;
+  const { error } = await supabase.from("song_requests").insert(scopedPayload);
+  if (error && gigId && isMissingColumnError(error)) {
+    const retry = await supabase.from("song_requests").insert(payload);
+    if (retry.error) throw new Error(retry.error.message);
+    return;
+  }
+  if (error) throw new Error(error.message);
+}
+
+async function insertRequestLogWithFallback(payload: Record<string, any>): Promise<void> {
+  const { error } = await supabase.from("request_log").insert(payload);
+  if (error && "gig_id" in payload && isMissingColumnError(error)) {
+    const { gig_id: _drop, ...legacyPayload } = payload;
+    await supabase.from("request_log").insert(legacyPayload);
+  }
+}
+
 export const sbRequests = {
-  /** Audience submits a known song request */
-  async submit(songId: string, songTitle: string): Promise<void> {
-    const { error } = await supabase.from("song_requests").insert({
+  /** Audience submits a known song request. gigId is usually the active setlist id. */
+  async submit(songId: string, songTitle: string, gigId?: string | null): Promise<void> {
+    await insertRequestWithFallback({
       song_id: songId,
       song_title: songTitle,
       status: "pending",
       is_write_in: false,
-    });
-    if (error) throw new Error(error.message);
+    }, gigId);
   },
 
-  /** Audience or artist submits a write-in (song not in catalogue) */
-  async submitWriteIn(songTitle: string): Promise<void> {
-    const { error } = await supabase.from("song_requests").insert({
+  /** Audience or artist submits a write-in (song not in catalogue). */
+  async submitWriteIn(songTitle: string, gigId?: string | null): Promise<void> {
+    await insertRequestWithFallback({
       song_id: null,
       song_title: songTitle,
       status: "pending",
       is_write_in: true,
-    });
-    if (error) throw new Error(error.message);
+    }, gigId);
   },
 
-  /** Same as submitWriteIn but returns raw result for caller error handling */
-  async submitWriteInSafe(songTitle: string): Promise<{ error: any }> {
-    return supabase.from("song_requests").insert({
+  /** Same as submitWriteIn but returns raw result for caller error handling. */
+  async submitWriteInSafe(songTitle: string, gigId?: string | null): Promise<{ error: any }> {
+    const payload = {
       song_id: null,
       song_title: songTitle,
       status: "pending",
       is_write_in: true,
-    });
+      ...(gigId ? { gig_id: gigId } : {}),
+    };
+    const result = await supabase.from("song_requests").insert(payload);
+    if (result.error && gigId && isMissingColumnError(result.error)) {
+      return supabase.from("song_requests").insert({
+        song_id: null,
+        song_title: songTitle,
+        status: "pending",
+        is_write_in: true,
+      });
+    }
+    return { error: result.error };
   },
 
-  async getPending(): Promise<SbRequest[]> {
-    const { data } = await supabase
+  async getPending(gigId?: string | null): Promise<SbRequest[]> {
+    let query = supabase
       .from("song_requests")
       .select("*")
       .eq("status", "pending")
       .order("created_at", { ascending: true });
+    if (gigId) query = query.eq("gig_id", gigId);
+
+    const { data, error } = await query;
+    if (error && gigId && isMissingColumnError(error)) {
+      const fallback = await supabase
+        .from("song_requests")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+      return (fallback.data ?? []) as SbRequest[];
+    }
     return (data ?? []) as SbRequest[];
   },
 
-  /** Resolve a request and log the outcome permanently */
+  /** Resolve a request and log the outcome permanently. */
   async resolve(
     req: SbRequest,
     outcome: "approved" | "denied" | "alternative"
   ): Promise<void> {
-    // Mark the live request as resolved
     await supabase.from("song_requests").update({ status: outcome }).eq("id", req.id);
-    // Write to permanent log
-    await supabase.from("request_log").insert({
+    await insertRequestLogWithFallback({
+      gig_id: req.gig_id ?? null,
       song_id: req.song_id ?? null,
       song_title: req.song_title,
       is_write_in: req.is_write_in ?? false,
@@ -372,20 +442,35 @@ export const sbRequests = {
     });
   },
 
-  /** Fetch full request history log */
-  async getLog(): Promise<any[]> {
-    const { data } = await supabase
+  /** Fetch request history log, optionally scoped to one gig/setlist. */
+  async getLog(gigId?: string | null): Promise<any[]> {
+    let query = supabase
       .from("request_log")
       .select("*")
       .order("requested_at", { ascending: false });
+    if (gigId) query = query.eq("gig_id", gigId);
+
+    const { data, error } = await query;
+    if (error && gigId && isMissingColumnError(error)) {
+      const fallback = await supabase
+        .from("request_log")
+        .select("*")
+        .order("requested_at", { ascending: false });
+      return fallback.data ?? [];
+    }
     return data ?? [];
   },
 
-  async clearAll(): Promise<void> {
-    const { error } = await supabase
-      .from("song_requests")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
+  async clearAll(gigId?: string | null): Promise<void> {
+    let query = supabase.from("song_requests").delete().eq("status", "pending");
+    if (gigId) query = query.eq("gig_id", gigId);
+
+    const { error } = await query;
+    if (error && gigId && isMissingColumnError(error)) {
+      const retry = await supabase.from("song_requests").delete().eq("status", "pending");
+      if (retry.error) throw new Error(retry.error.message);
+      return;
+    }
     if (error) throw new Error(error.message);
   },
 };
