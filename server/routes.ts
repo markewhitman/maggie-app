@@ -3,7 +3,6 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { seedDatabase } from "./seed";
 import { insertSongSchema, insertSetlistSchema, insertRequestSchema } from "@shared/schema";
-import { z } from "zod";
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   await seedDatabase();
@@ -50,8 +49,10 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   });
 
   app.post("/api/setlists", (req, res) => {
-    const schema = insertSetlistSchema.extend({ createdAt: z.string().optional() });
-    const result = schema.safeParse({ ...req.body, createdAt: new Date().toISOString() });
+    const result = insertSetlistSchema.safeParse({
+      ...req.body,
+      createdAt: req.body.createdAt ?? new Date().toISOString(),
+    });
     if (!result.success) return res.status(400).json({ error: result.error });
     res.json(storage.createSetlist(result.data));
   });
@@ -105,7 +106,10 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   });
 
   app.post("/api/requests", (req, res) => {
-    const result = insertRequestSchema.safeParse(req.body);
+    const result = insertRequestSchema.safeParse({
+      ...req.body,
+      createdAt: req.body.createdAt ?? new Date().toISOString(),
+    });
     if (!result.success) return res.status(400).json({ error: result.error });
     res.json(storage.createRequest(result.data));
   });

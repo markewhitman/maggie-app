@@ -18,13 +18,13 @@ function AppRoutes() {
   return (
     <Router hook={useHashLocation}>
       <Switch>
-        <Route path="/audience" component={AudiencePage} />
         <Route>
           <Layout>
             <Switch>
               <Route path="/" component={Dashboard} />
               <Route path="/setlists" component={SetlistPage} />
               <Route path="/stage" component={StagePage} />
+              <Route path="/audience" component={AudiencePage} />
               <Route path="/venues" component={VenuesPage} />
               <Route path="/settings" component={SettingsPage} />
               <Route component={NotFound} />

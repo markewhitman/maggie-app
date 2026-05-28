@@ -1,21 +1,25 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import type { Song, PerformanceNote } from "@/lib/data";
-import { perfNotesStore, songsStore } from "@/lib/data";
-import { uploadPdf, deleteAsset } from "@/lib/github";
-import { useGithub } from "@/lib/GithubContext";
+import type { Song } from "@/lib/data";
+import { perfNotesStore, songsStore, formatDuration } from "@/lib/data";
+import { sbPdfs, sbSongPdfs } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StrumPattern } from "@/components/StrumPattern";
 import { useToast } from "@/hooks/use-toast";
 import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
-  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, X
+  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2
 } from "lucide-react";
+import { FullscreenPdfViewer } from "@/components/FullscreenPdfViewer";
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
@@ -24,6 +28,8 @@ interface Props {
   song: Song;
   onClose: () => void;
   onDelete?: (id: string) => void;
+  onEdit?: (updated: Song) => void; // if provided, shows Edit tab
+  defaultTab?: "info" | "pdf" | "history" | "edit";
 }
 
 const DIFF_COLORS: Record<string, string> = {
@@ -45,19 +51,199 @@ function StarRating({ value }: { value: number }) {
   );
 }
 
-export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props) {
+// ─── Edit Form ────────────────────────────────────────────
+
+function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) => void; onCancel: () => void }) {
+  const [form, setForm] = useState<Song>({ ...song });
+  const set = (field: keyof Song, value: any) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleTagsChange = (raw: string) => {
+    set("tags", raw.split(",").map((t) => t.trim()).filter(Boolean));
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        {/* Title */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Title</Label>
+          <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
+        </div>
+        {/* Artist */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Artist</Label>
+          <Input value={form.artist} onChange={(e) => set("artist", e.target.value)} />
+        </div>
+        {/* Year */}
+        <div className="space-y-1">
+          <Label className="text-xs">Year</Label>
+          <Input type="number" value={form.year} onChange={(e) => set("year", parseInt(e.target.value) || form.year)} />
+        </div>
+        {/* Difficulty */}
+        <div className="space-y-1">
+          <Label className="text-xs">Difficulty</Label>
+          <Select value={form.difficulty} onValueChange={(v) => set("difficulty", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Beginner">Beginner</SelectItem>
+              <SelectItem value="Intermediate">Intermediate</SelectItem>
+              <SelectItem value="Advanced">Advanced</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Key */}
+        <div className="space-y-1">
+          <Label className="text-xs">Key</Label>
+          <Input value={form.key} onChange={(e) => set("key", e.target.value)} placeholder="G Major" />
+        </div>
+        {/* Capo */}
+        <div className="space-y-1">
+          <Label className="text-xs">Capo</Label>
+          <Input value={form.capo} onChange={(e) => set("capo", e.target.value)} placeholder="No capo" />
+        </div>
+        {/* Tempo BPM */}
+        <div className="space-y-1">
+          <Label className="text-xs">Tempo (BPM)</Label>
+          <Input type="number" value={form.tempo} onChange={(e) => set("tempo", parseInt(e.target.value) || form.tempo)} />
+        </div>
+        {/* Tempo Feel */}
+        <div className="space-y-1">
+          <Label className="text-xs">Tempo Feel</Label>
+          <Select value={form.tempoFeel} onValueChange={(v) => set("tempoFeel", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {["Ballad", "Mid-Tempo", "Driving", "Up-Tempo", "Upbeat"].map((t) => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Duration */}
+        <div className="space-y-1">
+          <Label className="text-xs">Duration (m:ss)</Label>
+          <Input
+            value={form.duration ? `${Math.floor((form.duration ?? 0) / 60)}:${((form.duration ?? 0) % 60).toString().padStart(2, "0")}` : ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              const parts = val.split(":");
+              if (parts.length === 2) {
+                const m = parseInt(parts[0]) || 0;
+                const s = parseInt(parts[1]) || 0;
+                set("duration", m * 60 + Math.min(s, 59));
+              } else if (parts.length === 1 && val !== "") {
+                const m = parseInt(parts[0]) || 0;
+                set("duration", m * 60);
+              }
+            }}
+            placeholder="3:30"
+          />
+        </div>
+        {/* Genre */}
+        <div className="space-y-1">
+          <Label className="text-xs">Genre</Label>
+          <Input value={form.genre} onChange={(e) => set("genre", e.target.value)} />
+        </div>
+        {/* Mood */}
+        <div className="space-y-1">
+          <Label className="text-xs">Mood</Label>
+          <Input value={form.mood} onChange={(e) => set("mood", e.target.value)} />
+        </div>
+        {/* Energy */}
+        <div className="space-y-1">
+          <Label className="text-xs">Energy</Label>
+          <Select value={form.energy ?? "medium"} onValueChange={(v) => set("energy", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Guitar Type */}
+        <div className="space-y-1">
+          <Label className="text-xs">Guitar Type</Label>
+          <Select value={form.guitarType} onValueChange={(v) => set("guitarType", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="acoustic">Acoustic</SelectItem>
+              <SelectItem value="electric">Electric</SelectItem>
+              <SelectItem value="either">Either</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Chords */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Chords</Label>
+          <Input value={form.chords} onChange={(e) => set("chords", e.target.value)} placeholder="G, D, Em, C" />
+        </div>
+        {/* Strumming */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Strumming Pattern</Label>
+          <Input value={form.strumming} onChange={(e) => set("strumming", e.target.value)} placeholder="D DU UDU" />
+        </div>
+        {/* Tags */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Tags (comma-separated)</Label>
+          <Input
+            value={Array.isArray(form.tags) ? form.tags.join(", ") : ""}
+            onChange={(e) => handleTagsChange(e.target.value)}
+            placeholder="crowd-pleaser, slow-build, singalong"
+          />
+        </div>
+        {/* Stage tip */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Stage Tip / Performance Note</Label>
+          <Textarea
+            value={form.performanceNote}
+            onChange={(e) => set("performanceNote", e.target.value)}
+            rows={2}
+            placeholder="Key change after bridge, watch tempo on verse 2…"
+          />
+        </div>
+        {/* UG URL */}
+        <div className="col-span-2 space-y-1">
+          <Label className="text-xs">Ultimate Guitar URL</Label>
+          <Input value={form.ultimateGuitarUrl} onChange={(e) => set("ultimateGuitarUrl", e.target.value)} placeholder="https://tabs.ultimate-guitar.com/…" />
+        </div>
+      </div>
+      <div className="flex gap-2 pt-2 border-t border-border">
+        <Button onClick={() => onSave(form)} className="flex-1 gap-1.5">
+          <Save className="w-4 h-4" /> Save Changes
+        </Button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Modal ───────────────────────────────────────────
+
+export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, defaultTab = "info" }: Props) {
   const [song, setSong] = useState<Song>(initialSong);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
+  const [fullscreenPdf, setFullscreenPdf] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { pat, config, isConfigured } = useGithub();
   const { toast } = useToast();
 
   const perfHistory = perfNotesStore.getForSong(song.id);
+
+  // On open: load pdfUrl from Supabase in case it was uploaded on another device
+  useEffect(() => {
+    sbSongPdfs.getAll().then((map) => {
+      const entry = map[initialSong.id];
+      if (entry && entry.url !== initialSong.pdfUrl) {
+        const patched = { ...initialSong, pdfUrl: entry.url, pdfFileName: entry.name };
+        songsStore.updatePdf(initialSong.id, entry.url, 0, entry.name);
+        setSong(patched);
+      }
+    }).catch(() => {/* network error — use localStorage value */});
+  }, [initialSong.id]);
 
   const refreshSong = () => {
     const updated = songsStore.getAll().find((s) => s.id === song.id);
@@ -69,19 +255,12 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
       toast({ title: "PDF files only", variant: "destructive" });
       return;
     }
-    if (!isConfigured || !config) {
-      toast({
-        title: "GitHub not configured",
-        description: "Go to Settings to set up your GitHub repo and token.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setUploading(true);
     try {
-      const asset = await uploadPdf(config.owner, config.repo, pat, file, song.id);
-      songsStore.updatePdf(song.id, asset.browser_download_url, asset.id, file.name);
+      const publicUrl = await sbPdfs.upload(song.id, file);
+      // Save URL to Supabase so all devices can find it
+      await sbSongPdfs.save(song.id, publicUrl, file.name);
+      songsStore.updatePdf(song.id, publicUrl, 0, file.name);
       refreshSong();
       toast({ title: "PDF uploaded!", description: file.name });
     } catch (err: any) {
@@ -89,11 +268,13 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
     } finally {
       setUploading(false);
     }
-  }, [pat, config, isConfigured, song.id]);
+  }, [song.id]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleUpload(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -104,21 +285,15 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
   };
 
   const handleDeletePdf = async () => {
-    if (!isConfigured || !config || !song.pdfAssetId) {
-      songsStore.removePdf(song.id);
-      refreshSong();
-      return;
-    }
     try {
-      await deleteAsset(config.owner, config.repo, pat, song.pdfAssetId);
-      songsStore.removePdf(song.id);
-      refreshSong();
-      toast({ title: "PDF removed" });
+      await sbPdfs.deleteForSong(song.id);
+      await sbSongPdfs.remove(song.id);
     } catch {
-      // Still remove locally even if GitHub delete fails
-      songsStore.removePdf(song.id);
-      refreshSong();
+      // Ignore storage errors — remove locally regardless
     }
+    songsStore.removePdf(song.id);
+    refreshSong();
+    toast({ title: "PDF removed" });
   };
 
   const avgCrowd = perfHistory.length
@@ -150,11 +325,14 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
           )}
         </div>
 
-        <Tabs defaultValue="info" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="w-full rounded-none border-b bg-transparent justify-start px-6 h-10 gap-1">
             <TabsTrigger value="info" className="text-xs gap-1.5"><Info className="w-3 h-3" />Details</TabsTrigger>
             <TabsTrigger value="pdf" className="text-xs gap-1.5"><FileText className="w-3 h-3" />Sheet Music</TabsTrigger>
             <TabsTrigger value="history" className="text-xs gap-1.5"><Star className="w-3 h-3" />Performance History</TabsTrigger>
+            {onEdit && (
+              <TabsTrigger value="edit" className="text-xs gap-1.5 ml-auto"><Pencil className="w-3 h-3" />Edit</TabsTrigger>
+            )}
           </TabsList>
 
           {/* ── INFO TAB ── */}
@@ -170,6 +348,9 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
                   <Clock className="w-3 h-3" /> Tempo
                 </div>
                 <div className="font-medium text-sm">{song.tempo} BPM · {song.tempoFeel}</div>
+                {song.duration && (
+                  <div className="text-xs text-muted-foreground mt-0.5">{formatDuration(song.duration)} duration</div>
+                )}
               </div>
             </div>
 
@@ -219,89 +400,105 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
 
           {/* ── PDF TAB ── */}
           <TabsContent value="pdf" className="p-6 mt-0 space-y-4">
+
+            {/* Fullscreen overlay — rendered outside the Dialog so it covers everything */}
+            {fullscreenPdf && song.pdfUrl && (
+              <FullscreenPdfViewer
+                pdfUrl={song.pdfUrl}
+                songTitle={song.title}
+                onClose={() => setFullscreenPdf(false)}
+                initialPage={pageNumber}
+              />
+            )}
+
             {song.pdfUrl ? (
               <>
-                {/* PDF toolbar */}
-                <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7"
-                      disabled={pageNumber <= 1}
-                      onClick={() => setPageNumber((p) => p - 1)}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {pageNumber} / {numPages}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7"
-                      disabled={pageNumber >= numPages}
-                      onClick={() => setPageNumber((p) => p + 1)}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground truncate max-w-[140px]">{song.pdfFilename}</span>
-                    <a
-                      href={song.pdfUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary"
-                      title="Open PDF in new tab"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7 text-destructive"
-                      onClick={handleDeletePdf}
-                      title="Remove PDF"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                {/* ── Primary action: open fullscreen ── */}
+                <button
+                  onClick={() => setFullscreenPdf(true)}
+                  className="w-full flex items-center justify-center gap-3 bg-primary hover:bg-primary/90 active:scale-[0.98] text-primary-foreground rounded-xl py-4 font-semibold text-base transition-all shadow-md"
+                >
+                  <Maximize2 className="w-5 h-5" />
+                  Open Sheet Music
+                </button>
 
-                {/* PDF viewer */}
-                <div className="border border-border rounded-xl overflow-hidden bg-muted/30 flex flex-col items-center min-h-[400px] relative">
-                  {pdfLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                {/* Hint text */}
+                <p className="text-xs text-center text-muted-foreground -mt-1">
+                  Opens full-screen · tap edges to turn pages · press Esc to close
+                </p>
+
+                {/* ── Compact preview + management row ── */}
+                <div className="border border-border rounded-xl overflow-hidden bg-muted/30 relative">
+                  {/* Mini toolbar */}
+                  <div className="flex items-center justify-between bg-muted/60 px-3 py-1.5 border-b border-border">
+                    <div className="flex items-center gap-1.5">
+                      {numPages > 1 && (
+                        <>
+                          <Button variant="ghost" size="icon" className="w-6 h-6"
+                            disabled={pageNumber <= 1}
+                            onClick={() => setPageNumber((p) => p - 1)}>
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </Button>
+                          <span className="text-xs text-muted-foreground tabular-nums">{pageNumber}/{numPages}</span>
+                          <Button variant="ghost" size="icon" className="w-6 h-6"
+                            disabled={pageNumber >= numPages}
+                            onClick={() => setPageNumber((p) => p + 1)}>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      <span className="text-xs text-muted-foreground truncate max-w-[120px] ml-1">{song.pdfFilename}</span>
                     </div>
-                  )}
-                  {pdfError && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground p-6 text-center">
-                      <AlertCircle className="w-8 h-8 text-destructive" />
-                      <p className="text-sm">{pdfError}</p>
-                      <p className="text-xs">Try opening the PDF directly ↗</p>
-                      <a href={song.pdfUrl} target="_blank" rel="noopener noreferrer">
-                        <Button variant="outline" size="sm" className="gap-1.5">
-                          <ExternalLink className="w-3.5 h-3.5" /> Open PDF
-                        </Button>
+                    <div className="flex items-center gap-1">
+                      <a href={song.pdfUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-primary" title="Open in browser">
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
+                      <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive"
+                        onClick={handleDeletePdf} title="Remove PDF">
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
                     </div>
-                  )}
-                  <Document
-                    file={song.pdfUrl}
-                    onLoadSuccess={({ numPages }) => { setNumPages(numPages); setPdfLoading(false); }}
-                    onLoadError={(err) => { setPdfError("Could not load PDF inline. " + err.message); setPdfLoading(false); }}
-                    loading=""
-                    className="w-full"
+                  </div>
+
+                  {/* Small preview — click to fullscreen */}
+                  <div
+                    className="flex flex-col items-center cursor-pointer relative group"
+                    onClick={() => setFullscreenPdf(true)}
+                    title="Click to open full screen"
                   >
-                    <Page
-                      pageNumber={pageNumber}
-                      width={580}
-                      className="mx-auto"
-                      loading={<div className="h-[400px]" />}
-                    />
-                  </Document>
+                    {pdfLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center z-10 bg-muted/50">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    )}
+                    {pdfError ? (
+                      <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground text-center px-4">
+                        <AlertCircle className="w-7 h-7 text-destructive" />
+                        <p className="text-xs">{pdfError}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center z-10">
+                          <Maximize2 className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 drop-shadow-lg transition-opacity" />
+                        </div>
+                        <Document
+                          file={song.pdfUrl}
+                          onLoadSuccess={({ numPages: n }) => { setNumPages(n); setPdfLoading(false); }}
+                          onLoadError={(err) => { setPdfError("Could not load preview. " + err.message); setPdfLoading(false); }}
+                          loading=""
+                          className="w-full"
+                        >
+                          <Page
+                            pageNumber={pageNumber}
+                            width={320}
+                            className="mx-auto pointer-events-none"
+                            loading={<div className="h-[200px]" />}
+                          />
+                        </Document>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* Replace PDF */}
@@ -335,16 +532,10 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
                   <p className="font-medium mb-1">Drop a PDF here</p>
                   <p className="text-sm text-muted-foreground">Or click to pick a file</p>
                 </div>
-                {!isConfigured && (
-                  <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    GitHub not configured — go to Settings to enable PDF storage
-                  </div>
-                )}
                 <div className="flex gap-2">
                   <Button
                     onClick={() => fileRef.current?.click()}
-                    disabled={uploading || !isConfigured}
+                    disabled={uploading}
                     className="gap-1.5"
                   >
                     {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
@@ -357,7 +548,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
                   >
                     <Button variant="outline" className="gap-1.5">
                       <ExternalLink className="w-4 h-4" />
-                      Open on UG to download
+                      Open on Ultimate Guitar
                     </Button>
                   </a>
                 </div>
@@ -417,6 +608,21 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete }: Props)
               </div>
             )}
           </TabsContent>
+          {/* ── EDIT TAB ── */}
+          {onEdit && (
+            <TabsContent value="edit" className="mt-0">
+              <EditForm
+                song={song}
+                onSave={(updated) => {
+                  songsStore.upsert(updated);
+                  setSong(updated);
+                  onEdit(updated);
+                  toast({ title: "Song updated", description: updated.title });
+                }}
+                onCancel={onClose}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>

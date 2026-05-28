@@ -6,8 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { songsStore, type Song } from "@/lib/data";
-import { uploadPdf } from "@/lib/github";
-import { useGithub } from "@/lib/GithubContext";
+import { sbPdfs, sbSongPdfs } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Upload, X, FileText, ExternalLink } from "lucide-react";
 
@@ -15,6 +14,8 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
 }
+
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 function slugify(title: string, artist: string): string {
   return `${artist}-${title}`
@@ -24,8 +25,11 @@ function slugify(title: string, artist: string): string {
     .slice(0, 60);
 }
 
+function isPdf(file: File): boolean {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
 export function AddSongModal({ onClose, onSaved }: Props) {
-  const { pat, config, isConfigured } = useGithub();
   const { toast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -52,6 +56,25 @@ export function AddSongModal({ onClose, onSaved }: Props) {
 
   const set = (k: keyof typeof form) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
 
+  const handlePdfSelection = (file: File | undefined) => {
+    if (!file) {
+      setPdfFile(null);
+      return;
+    }
+
+    if (!isPdf(file)) {
+      toast({ title: "PDF files only", variant: "destructive" });
+      return;
+    }
+
+    if (file.size > MAX_PDF_BYTES) {
+      toast({ title: "PDF is too large", description: "Please choose a PDF smaller than 20 MB.", variant: "destructive" });
+      return;
+    }
+
+    setPdfFile(file);
+  };
+
   const handleSave = async () => {
     if (!form.title.trim() || !form.artist.trim()) {
       toast({ title: "Title and Artist are required", variant: "destructive" });
@@ -60,51 +83,55 @@ export function AddSongModal({ onClose, onSaved }: Props) {
 
     setSaving(true);
 
-    let pdfUrl: string | undefined;
-    let pdfAssetId: number | undefined;
-    let pdfFilename: string | undefined;
+    try {
+      const songId = slugify(form.title, form.artist) || `song-${Date.now()}`;
+      let pdfUrl: string | undefined;
+      let pdfFilename: string | undefined;
 
-    if (pdfFile && isConfigured && config) {
-      try {
-        const id = slugify(form.title, form.artist);
-        const asset = await uploadPdf(config.owner, config.repo, pat, pdfFile, id);
-        pdfUrl = asset.browser_download_url;
-        pdfAssetId = asset.id;
+      if (pdfFile) {
+        const publicUrl = await sbPdfs.upload(songId, pdfFile);
+        await sbSongPdfs.save(songId, publicUrl, pdfFile.name);
+        pdfUrl = publicUrl;
         pdfFilename = pdfFile.name;
-      } catch (err: any) {
-        toast({ title: "PDF upload failed", description: err.message, variant: "destructive" });
       }
+
+      const song: Song = {
+        id: songId,
+        title: form.title.trim(),
+        artist: form.artist.trim(),
+        year: parseInt(form.year) || new Date().getFullYear(),
+        key: form.key.trim() || "Unknown",
+        capo: form.capo.trim() || "No capo",
+        chords: form.chords.trim(),
+        strumming: form.strumming.trim(),
+        guitarType: form.guitarType,
+        tempo: parseInt(form.tempo) || 120,
+        tempoFeel: form.tempoFeel,
+        mood: form.mood.trim(),
+        genre: form.genre.trim(),
+        difficulty: form.difficulty,
+        tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        performanceNote: form.performanceNote.trim(),
+        ultimateGuitarUrl: form.ultimateGuitarUrl.trim(),
+        setPosition: 99,
+        userAdded: true,
+        pdfUrl,
+        pdfAssetId: undefined,
+        pdfFilename,
+      };
+
+      songsStore.upsert(song);
+      toast({ title: "Song added!", description: form.title });
+      onSaved();
+    } catch (err: any) {
+      toast({
+        title: "Could not add song",
+        description: err?.message ?? "The song was not saved. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-
-    const song: Song = {
-      id: slugify(form.title, form.artist) || `song-${Date.now()}`,
-      title: form.title.trim(),
-      artist: form.artist.trim(),
-      year: parseInt(form.year) || new Date().getFullYear(),
-      key: form.key.trim() || "Unknown",
-      capo: form.capo.trim() || "No capo",
-      chords: form.chords.trim(),
-      strumming: form.strumming.trim(),
-      guitarType: form.guitarType,
-      tempo: parseInt(form.tempo) || 120,
-      tempoFeel: form.tempoFeel,
-      mood: form.mood.trim(),
-      genre: form.genre.trim(),
-      difficulty: form.difficulty,
-      tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
-      performanceNote: form.performanceNote.trim(),
-      ultimateGuitarUrl: form.ultimateGuitarUrl.trim(),
-      setPosition: 99,
-      userAdded: true,
-      pdfUrl,
-      pdfAssetId,
-      pdfFilename,
-    };
-
-    songsStore.upsert(song);
-    toast({ title: "Song added!", description: form.title });
-    setSaving(false);
-    onSaved();
   };
 
   return (
@@ -260,15 +287,13 @@ export function AddSongModal({ onClose, onSaved }: Props) {
                   type="file"
                   accept=".pdf,application/pdf"
                   className="hidden"
-                  onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => handlePdfSelection(e.target.files?.[0])}
                 />
               </label>
             )}
-            {!isConfigured && pdfFile && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                GitHub not configured — PDF will be saved locally only (no cloud storage)
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              PDFs upload to Supabase Storage and sync through the song PDF map.
+            </p>
           </div>
 
           {/* Actions */}

@@ -1,22 +1,102 @@
 import { useState, useMemo } from "react";
-import type { Song } from "@/lib/data";
-import { songsStore, SEED_SONGS } from "@/lib/data";
+import type { Song, Setlist } from "@/lib/data";
+import { songsStore, setlistsStore } from "@/lib/data";
 import { SongCard } from "@/components/SongCard";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { AddSongModal } from "@/components/AddSongModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const FILTERS = {
-  difficulty: ["Beginner", "Intermediate", "Advanced"],
-  guitarType: ["acoustic", "electric", "either"],
-  tempoFeel: ["Ballad", "Mid-Tempo", "Up-Tempo", "Driving", "Upbeat", "Slow", "Very Fast"],
-  capo: ["With Capo", "No Capo"],
+// ─── Filter definitions ────────────────────────────────────
+// Genre labels mapped from slug → display
+const GENRE_LABELS: Record<string, string> = {
+  "pop": "Pop",
+  "rock": "Rock",
+  "classic-rock": "Classic Rock",
+  "indie-rock": "Indie Rock",
+  "alternative": "Alternative",
+  "folk": "Folk",
+  "folk-rock": "Folk Rock",
+  "indie-folk": "Indie Folk",
+  "singer-songwriter": "Singer-Songwriter",
+  "country-pop": "Country/Pop",
+  "80s-pop": "80s Pop",
+  "new-wave": "New Wave",
+  "britpop": "Britpop",
+  "art-rock": "Art Rock",
+  "glam-rock": "Glam Rock",
+  "synth-pop": "Synth Pop",
 };
+
+const MOOD_LABELS: Record<string, string> = {
+  "feel-good": "Feel Good",
+  "nostalgic": "Nostalgic",
+  "emotional": "Emotional",
+  "anthemic": "Anthemic",
+  "uplifting": "Uplifting",
+  "romantic": "Romantic",
+  "melancholic": "Melancholic",
+  "energetic": "Energetic",
+  "chill": "Chill",
+  "bittersweet": "Bittersweet",
+  "heartfelt": "Heartfelt",
+  "whimsical": "Whimsical",
+};
+
+const FILTER_GROUPS = [
+  {
+    key: "genre",
+    label: "Genre",
+    options: Object.keys(GENRE_LABELS),
+    displayLabel: (v: string) => GENRE_LABELS[v] ?? v,
+  },
+  {
+    key: "mood",
+    label: "Mood / Vibe",
+    options: Object.keys(MOOD_LABELS),
+    displayLabel: (v: string) => MOOD_LABELS[v] ?? v,
+  },
+  {
+    key: "decade",
+    label: "Era",
+    options: ["60s", "70s", "80s", "90s", "00s", "10s", "20s"],
+    displayLabel: (v: string) => v === "00s" ? "2000s" : v === "10s" ? "2010s" : v === "20s" ? "2020s" : `${v.slice(0, -1)}0s`,
+  },
+  {
+    key: "energy",
+    label: "Energy",
+    options: ["low", "medium", "high"],
+    displayLabel: (v: string) => v === "low" ? "Low Energy" : v === "medium" ? "Medium Energy" : "High Energy",
+  },
+  {
+    key: "vocalStyle",
+    label: "Vocal Style",
+    options: ["storytelling", "singalong", "emotional", "powerful", "conversational"],
+    displayLabel: (v: string) => v.charAt(0).toUpperCase() + v.slice(1),
+  },
+  {
+    key: "difficulty",
+    label: "Difficulty",
+    options: ["Beginner", "Intermediate", "Advanced"],
+    displayLabel: (v: string) => v,
+  },
+  {
+    key: "guitarType",
+    label: "Guitar",
+    options: ["acoustic", "electric", "either"],
+    displayLabel: (v: string) => v.charAt(0).toUpperCase() + v.slice(1),
+  },
+  {
+    key: "capo",
+    label: "Capo",
+    options: ["With Capo", "No Capo"],
+    displayLabel: (v: string) => v,
+  },
+];
 
 export default function Dashboard() {
   const [songs, setSongs] = useState<Song[]>(() => songsStore.getAll());
@@ -25,8 +105,24 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [showAddSong, setShowAddSong] = useState(false);
+  const [addToSetlistSong, setAddToSetlistSong] = useState<Song | null>(null);
+  const [setlists, setSetlists] = useState<Setlist[]>(() => setlistsStore.getAll());
   const { toast } = useToast();
+
+  const handleAddToSetlist = (setlistId: string, song: Song) => {
+    const setlist = setlists.find((s) => s.id === setlistId);
+    if (!setlist) return;
+    if (setlist.songIds.includes(song.id)) {
+      toast({ title: "Already in setlist", description: `${song.title} is already in "${setlist.name}"` });
+      return;
+    }
+    setlistsStore.update(setlistId, { songIds: [...setlist.songIds, song.id] });
+    setSetlists(setlistsStore.getAll());
+    toast({ title: "Added to setlist", description: `${song.title} added to "${setlist.name}"` });
+    setAddToSetlistSong(null);
+  };
 
   const refresh = () => setSongs(songsStore.getAll());
 
@@ -41,15 +137,29 @@ export default function Dashboard() {
         (s.mood ?? "").toLowerCase().includes(q) ||
         s.tags.some((t) => t.toLowerCase().includes(q));
 
+      const matchGenre =
+        !activeFilters.genre ||
+        (s.genre ?? "").toLowerCase().replace(/[/ ]/g, "-").includes(activeFilters.genre) ||
+        (s.genre2 ?? "") === activeFilters.genre;
+
+      const matchMood =
+        !activeFilters.mood ||
+        (s.mood ?? "").toLowerCase().includes(activeFilters.mood.replace("-", " ")) ||
+        (s.mood2 ?? "").toLowerCase() === activeFilters.mood ||
+        (s.mood ?? "").toLowerCase() === activeFilters.mood;
+
+      const matchDecade = !activeFilters.decade || s.decade === activeFilters.decade;
+      const matchEnergy = !activeFilters.energy || s.energy === activeFilters.energy;
+      const matchVocal = !activeFilters.vocalStyle || s.vocalStyle === activeFilters.vocalStyle;
       const matchDiff = !activeFilters.difficulty || s.difficulty === activeFilters.difficulty;
       const matchGuitar = !activeFilters.guitarType || s.guitarType === activeFilters.guitarType;
-      const matchTempo = !activeFilters.tempoFeel || s.tempoFeel === activeFilters.tempoFeel;
       const matchCapo =
         !activeFilters.capo ||
         (activeFilters.capo === "With Capo" && s.capo !== "No capo") ||
         (activeFilters.capo === "No Capo" && (!s.capo || s.capo === "No capo"));
 
-      return matchSearch && matchDiff && matchGuitar && matchTempo && matchCapo;
+      return matchSearch && matchGenre && matchMood && matchDecade && matchEnergy &&
+             matchVocal && matchDiff && matchGuitar && matchCapo;
     });
   }, [songs, search, activeFilters]);
 
@@ -60,12 +170,19 @@ export default function Dashboard() {
     }));
   };
 
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const clearFilters = () => {
     setActiveFilters({});
     setSearch("");
   };
 
   const activeCount = Object.values(activeFilters).filter(Boolean).length + (search ? 1 : 0);
+
+  // Quick-access active filter chips for the bar
+  const activeChips = Object.entries(activeFilters).filter(([, v]) => v);
 
   return (
     <div>
@@ -118,30 +235,73 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* Filters panel */}
+      {/* Active filter chips */}
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {activeChips.map(([key, val]) => {
+            const group = FILTER_GROUPS.find((g) => g.key === key);
+            const label = group?.displayLabel(val) ?? val;
+            return (
+              <Badge
+                key={key}
+                className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors"
+                onClick={() => toggleFilter(key, val)}
+                data-testid={`active-filter-${key}`}
+              >
+                {label}
+                <X className="w-3 h-3" />
+              </Badge>
+            );
+          })}
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="h-6 text-xs px-2 text-muted-foreground">
+            Clear all
+          </Button>
+        </div>
+      )}
+
+      {/* Filters panel — Spotify-style grouped */}
       {showFilters && (
-        <div className="bg-muted/50 rounded-xl p-4 mb-4 space-y-3">
-          {Object.entries(FILTERS).map(([key, values]) => (
-            <div key={key} className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide w-20 shrink-0 capitalize">
-                {key}
-              </span>
-              {values.map((val) => (
-                <Badge
-                  key={val}
-                  variant={activeFilters[key] === val ? "default" : "outline"}
-                  className="cursor-pointer text-xs"
-                  onClick={() => toggleFilter(key, val)}
-                  data-testid={`filter-${key}-${val}`}
+        <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4 space-y-1">
+          {FILTER_GROUPS.map((group) => {
+            const isExpanded = expandedGroups[group.key] ?? true;
+            const hasActive = !!activeFilters[group.key];
+            return (
+              <div key={group.key} className="border-b border-border/50 last:border-0 pb-2 last:pb-0">
+                <button
+                  className="flex items-center justify-between w-full py-1.5 text-left"
+                  onClick={() => toggleGroup(group.key)}
                 >
-                  {val}
-                </Badge>
-              ))}
-            </div>
-          ))}
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${hasActive ? "text-primary" : "text-muted-foreground"}`}>
+                    {group.label}
+                    {hasActive && (
+                      <span className="ml-1.5 normal-case font-normal">
+                        · {group.displayLabel(activeFilters[group.key])}
+                      </span>
+                    )}
+                  </span>
+                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                </button>
+                {isExpanded && (
+                  <div className="flex flex-wrap gap-1.5 pt-1 pb-1">
+                    {group.options.map((val) => (
+                      <Badge
+                        key={val}
+                        variant={activeFilters[group.key] === val ? "default" : "outline"}
+                        className="cursor-pointer text-xs"
+                        onClick={() => toggleFilter(group.key, val)}
+                        data-testid={`filter-${group.key}-${val}`}
+                      >
+                        {group.displayLabel(val)}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {activeCount > 0 && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 h-7 text-xs mt-1">
-              <X className="w-3 h-3" /> Clear all
+              <X className="w-3 h-3" /> Clear all filters
             </Button>
           )}
         </div>
@@ -169,6 +329,7 @@ export default function Dashboard() {
               song={song}
               compact={viewMode === "list"}
               onClick={() => setSelectedSong(song)}
+              onAddToSetlist={setlists.length > 0 ? () => setAddToSetlistSong(song) : undefined}
             />
           ))}
         </div>
@@ -185,6 +346,11 @@ export default function Dashboard() {
             setSelectedSong(null);
             toast({ title: "Song removed" });
           }}
+          onEdit={(updated) => {
+            // Update the selected song so the modal header refreshes live
+            setSelectedSong(updated);
+            refresh();
+          }}
         />
       )}
 
@@ -195,6 +361,39 @@ export default function Dashboard() {
           onSaved={() => { refresh(); setShowAddSong(false); }}
         />
       )}
+
+      {/* Add to Setlist dialog */}
+      <Dialog open={!!addToSetlistSong} onOpenChange={(open) => { if (!open) setAddToSetlistSong(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display italic">
+              Add "{addToSetlistSong?.title}" to Setlist
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-2">
+            {setlists.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No setlists yet — create one first</p>
+            ) : (
+              setlists.map((sl) => (
+                <button
+                  key={sl.id}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-muted text-left transition-colors"
+                  onClick={() => addToSetlistSong && handleAddToSetlist(sl.id, addToSetlistSong)}
+                >
+                  <ListMusic className="w-4 h-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{sl.name}</div>
+                    <div className="text-xs text-muted-foreground">{sl.songIds.length} songs{sl.gigDate ? ` · ${sl.gigDate}` : ""}</div>
+                  </div>
+                  {sl.songIds.includes(addToSetlistSong?.id ?? "") && (
+                    <Badge variant="secondary" className="text-xs shrink-0">Added</Badge>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
