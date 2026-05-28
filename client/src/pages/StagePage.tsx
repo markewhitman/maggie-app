@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   CheckCircle2, SkipForward, RotateCcw, GripVertical, Star,
   Maximize2, ClipboardList, X, Pencil, Plus, Search, FileText, Bell,
@@ -88,14 +89,32 @@ function PerfNoteModal({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const [mode, setMode] = useState<"update" | "new">(existing ? "update" : "new");
   const [crowdReaction, setCrowdReaction] = useState(existing?.crowdReaction ?? 3);
   const [tempoFeel, setTempoFeel] = useState<PerformanceNote["tempoFeel"]>(existing?.tempoFeel ?? "Spot-on");
   const [lyricsConfidence, setLyricsConfidence] = useState<PerformanceNote["lyricsConfidence"]>(existing?.lyricsConfidence ?? "Good");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [saving, setSaving] = useState(false);
 
+  const startNewNote = () => {
+    setMode("new");
+    setCrowdReaction(3);
+    setTempoFeel("Spot-on");
+    setLyricsConfidence("Good");
+    setNotes("");
+  };
+
+  const editLatestNote = () => {
+    if (!existing) return;
+    setMode("update");
+    setCrowdReaction(existing.crowdReaction);
+    setTempoFeel(existing.tempoFeel);
+    setLyricsConfidence(existing.lyricsConfidence);
+    setNotes(existing.notes);
+  };
+
   const handleSave = async () => {
-    const note: PerformanceNote = existing
+    const note: PerformanceNote = existing && mode === "update"
       ? { ...existing, crowdReaction, tempoFeel, lyricsConfidence, notes }
       : {
           id: uid(),
@@ -135,6 +154,35 @@ function PerfNoteModal({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-1">
+          {existing && (
+            <div className="rounded-xl border border-border bg-muted/30 p-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={mode === "update" ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs"
+                  onClick={editLatestNote}
+                >
+                  Update latest
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === "new" ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs gap-1"
+                  onClick={startNewNote}
+                >
+                  <Plus className="w-3 h-3" /> Add new note
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                {mode === "new"
+                  ? "This will save a separate performance-history entry."
+                  : "This will edit the most recent note for this song in the active set."}
+              </p>
+            </div>
+          )}
           <div>
             <Label className="text-xs mb-2 block">Crowd Reaction</Label>
             <div className="flex gap-1.5">
@@ -174,7 +222,9 @@ function PerfNoteModal({
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Crowd loved it, key change tricky, nail the bridge…" rows={3} />
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleSave} className="flex-1" disabled={saving}>{saving ? "Saving…" : "Save Notes"}</Button>
+            <Button onClick={handleSave} className="flex-1" disabled={saving}>
+              {saving ? "Saving…" : mode === "new" ? "Save New Note" : "Update Note"}
+            </Button>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
           </div>
         </div>
@@ -654,6 +704,7 @@ export default function StagePage() {
   };
 
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   // Load session from Supabase on mount
   useEffect(() => {
@@ -787,7 +838,13 @@ export default function StagePage() {
   };
 
   const clearSession = async () => {
-    if (!window.confirm("End the active set? This clears the loaded Stage session.")) return;
+    const confirmed = await confirm({
+      title: "End active set?",
+      description: "This clears the currently loaded Stage session. Your saved setlist will remain available.",
+      confirmLabel: "End set",
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await sbSession.clear();
       setSessionState(null);
@@ -879,6 +936,8 @@ export default function StagePage() {
 
   return (
     <div>
+      {ConfirmDialog}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
@@ -1134,7 +1193,13 @@ export default function StagePage() {
           onDeny={handleDeny}
           onSuggest={handleSuggestAlternative}
           onClearAll={async () => {
-            if (!window.confirm("Clear every pending audience request?")) return;
+            const confirmed = await confirm({
+              title: "Clear all pending requests?",
+              description: "This removes every pending audience request from the queue.",
+              confirmLabel: "Clear requests",
+              destructive: true,
+            });
+            if (!confirmed) return;
             try {
               await sbRequests.clearAll();
               setRequests([]);

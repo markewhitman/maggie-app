@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/hooks/use-confirm";
 
 
 function sbToSetlist(r: SbSetlist): Setlist {
@@ -124,6 +125,7 @@ export default function Dashboard() {
   const [addToSetlistSong, setAddToSetlistSong] = useState<Song | null>(null);
   const [setlists, setSetlists] = useState<Setlist[]>([]);
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     sbSetlists
@@ -377,8 +379,14 @@ export default function Dashboard() {
         <SongDetailModal
           song={selectedSong}
           onClose={() => { setSelectedSong(null); refresh(); }}
-          onDelete={(id) => {
-            if (!window.confirm("Delete this song from your library? This cannot be undone.")) return;
+          onDelete={async (id) => {
+            const confirmed = await confirm({
+              title: "Delete this song?",
+              description: "This removes it from your local song library. This cannot be undone.",
+              confirmLabel: "Delete song",
+              destructive: true,
+            });
+            if (!confirmed) return;
             songsStore.delete(id);
             refresh();
             setSelectedSong(null);
@@ -401,6 +409,8 @@ export default function Dashboard() {
       )}
 
       {/* Add to Setlist dialog */}
+      {ConfirmDialog}
+
       <Dialog open={!!addToSetlistSong} onOpenChange={(open) => { if (!open) setAddToSetlistSong(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

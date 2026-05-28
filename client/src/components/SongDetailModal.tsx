@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StrumPattern } from "@/components/StrumPattern";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
   Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2
@@ -246,6 +247,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
   const [perfHistory, setPerfHistory] = useState<PerformanceNote[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   // On open: load pdfUrl from Supabase in case it was uploaded on another device
   useEffect(() => {
@@ -307,7 +309,13 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
   };
 
   const handleDeletePdf = async () => {
-    if (!window.confirm("Remove this PDF from the song?")) return;
+    const confirmed = await confirm({
+      title: "Remove this PDF?",
+      description: "This unlinks and removes the sheet music PDF for this song.",
+      confirmLabel: "Remove PDF",
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await sbPdfs.deleteForSong(song.id);
       await sbSongPdfs.remove(song.id);
@@ -324,8 +332,10 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
     : null;
 
   return (
-    <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0">
+    <>
+      {ConfirmDialog}
+      <Dialog open onOpenChange={() => onClose()}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0">
         {/* Amber top bar */}
         <div className="capo-badge-bar bg-primary/10 border-b border-primary/20 px-6 py-3 flex items-center gap-3">
           <span className="font-display font-bold text-lg italic">{song.title}</span>
@@ -647,7 +657,8 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
             </TabsContent>
           )}
         </Tabs>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

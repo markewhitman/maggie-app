@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/hooks/use-confirm";
 import { Plus, MapPin, Pencil, Trash2, Music, RefreshCw, Wifi } from "lucide-react";
 
 function uid(): string {
@@ -85,6 +86,7 @@ export default function VenuesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Venue | null>(null);
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const loadVenues = async () => {
     setLoading(true);
@@ -149,7 +151,13 @@ export default function VenuesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this venue? This cannot be undone.")) return;
+    const confirmed = await confirm({
+      title: "Delete this venue?",
+      description: "This permanently deletes the venue record. This cannot be undone.",
+      confirmLabel: "Delete venue",
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await sbVenues.delete(id);
       setVenues((prev) => prev.filter((v) => v.id !== id));
@@ -161,6 +169,8 @@ export default function VenuesPage() {
 
   return (
     <div>
+      {ConfirmDialog}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display font-bold text-xl italic mb-0.5">Venues</h1>

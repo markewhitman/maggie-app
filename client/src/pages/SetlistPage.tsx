@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag,
 } from "lucide-react";
@@ -373,6 +374,7 @@ export default function SetlistPage() {
   const [activeSessionCount, setActiveSessionCount] = useState(0);
 
   const { toast } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -559,7 +561,13 @@ export default function SetlistPage() {
   };
 
   const clearSession = async () => {
-    if (!window.confirm("Clear the active set from Stage?")) return;
+    const confirmed = await confirm({
+      title: "Clear active set?",
+      description: "This removes the currently loaded Stage session, but keeps your saved setlists.",
+      confirmLabel: "Clear active set",
+      destructive: true,
+    });
+    if (!confirmed) return;
     await sbSession.clear();
     setHasActiveSession(false);
     setActiveSessionCount(0);
@@ -567,7 +575,13 @@ export default function SetlistPage() {
 
   // ─── Delete setlist ───────────────────────────────────────
   const deleteSetlist = async (id: string) => {
-    if (!window.confirm("Delete this setlist? This cannot be undone.")) return;
+    const confirmed = await confirm({
+      title: "Delete this setlist?",
+      description: "This permanently deletes the saved setlist. This cannot be undone.",
+      confirmLabel: "Delete setlist",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setSyncing(true);
     try {
       await sbSetlists.delete(id);
@@ -640,6 +654,8 @@ export default function SetlistPage() {
           ))}
         </div>
       )}
+
+      {ConfirmDialog}
 
       {/* Builder Dialog */}
       <Dialog open={showBuilder} onOpenChange={(open) => { if (!open) resetBuilder(); }}>
