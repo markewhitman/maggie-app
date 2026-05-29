@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
-  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2
+  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2, UserPlus, Tag, Mic2
 } from "lucide-react";
 const FullscreenPdfViewer = lazy(() =>
   import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
@@ -331,25 +331,34 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
       <Dialog open onOpenChange={() => onClose()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0">
         {/* Amber top bar */}
-        <div className="capo-badge-bar bg-primary/10 border-b border-primary/20 px-6 py-3 flex items-center gap-3">
-          <span className="font-display font-bold text-lg italic">{song.title}</span>
-          <span className="text-muted-foreground text-sm">— {song.artist}</span>
-          {song.capo && song.capo !== "No capo" && (
-            <Badge className="capo-badge ml-auto">{song.capo}</Badge>
-          )}
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${DIFF_COLORS[song.difficulty]}`}>
-            {song.difficulty}
-          </span>
-          {onDelete && song.userAdded && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-7 h-7 text-destructive ml-1"
-              onClick={() => onDelete(song.id)}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          )}
+        <div className="capo-badge-bar bg-primary/10 border-b border-primary/20 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="font-display font-bold text-lg italic truncate">{song.title}</div>
+            <div className="text-muted-foreground text-sm truncate">{song.artist} · {song.year}</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {song.userAdded && (
+              <Badge variant="outline" className="gap-1 border-primary/40 text-primary"><UserPlus className="w-3 h-3" /> Custom</Badge>
+            )}
+            {song.pdfUrl && (
+              <Badge variant="outline" className="gap-1 border-primary/40 text-primary"><FileText className="w-3 h-3" /> PDF</Badge>
+            )}
+            {song.capo && song.capo !== "No capo" && <Badge className="capo-badge">{song.capo}</Badge>}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${DIFF_COLORS[song.difficulty]}`}>
+              {song.difficulty}
+            </span>
+            {onDelete && song.userAdded && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-8 h-8 text-destructive"
+                onClick={() => onDelete(song.id)}
+                title="Delete song"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
 
         <Tabs defaultValue={defaultTab} className="w-full">
@@ -363,40 +372,51 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
           </TabsList>
 
           {/* ── INFO TAB ── */}
-          <TabsContent value="info" className="p-6 space-y-5 mt-0">
-            {/* Key + Chords row */}
-            <div className="grid grid-cols-2 gap-4">
+          <TabsContent value="info" className="p-4 sm:p-6 space-y-5 mt-0">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="bg-muted/50 rounded-xl p-3">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Key</div>
-                <div className="font-medium text-sm leading-snug">{song.key}</div>
+                <div className="font-medium text-sm leading-snug">{song.key || "Unknown"}</div>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Capo</div>
+                <div className="font-medium text-sm">{song.capo || "No capo"}</div>
               </div>
               <div className="bg-muted/50 rounded-xl p-3">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Tempo
                 </div>
-                <div className="font-medium text-sm">{song.tempo} BPM · {song.tempoFeel}</div>
-                {song.duration && (
-                  <div className="text-xs text-muted-foreground mt-0.5">{formatDuration(song.duration)} duration</div>
+                <div className="font-medium text-sm">{song.tempo} BPM</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{song.tempoFeel}</div>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Duration</div>
+                <div className="font-medium text-sm">{song.duration ? formatDuration(song.duration) : "Not set"}</div>
+                {!song.duration && <div className="text-xs text-muted-foreground mt-0.5">Add in Edit for set timing</div>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-muted/50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <Guitar className="w-3 h-3" /> Chords
+                </div>
+                <div className="font-medium text-sm leading-relaxed">{song.chords || "No chords saved yet"}</div>
+              </div>
+
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Strumming</div>
+                {song.strumming ? (
+                  <>
+                    <StrumPattern pattern={song.strumming} />
+                    <div className="text-xs text-muted-foreground mt-1.5 leading-snug">{song.strumming}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No strumming pattern saved yet</div>
                 )}
               </div>
             </div>
 
-            {/* Chords */}
-            <div className="bg-muted/50 rounded-xl p-3">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
-                <Guitar className="w-3 h-3" /> Chords
-              </div>
-              <div className="font-medium text-sm leading-relaxed">{song.chords}</div>
-            </div>
-
-            {/* Strumming */}
-            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Strumming</div>
-              <StrumPattern pattern={song.strumming} />
-              <div className="text-xs text-muted-foreground mt-1.5 leading-snug">{song.strumming}</div>
-            </div>
-
-            {/* Stage tip */}
             {song.performanceNote && (
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl p-3">
                 <div className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1.5">Stage Tip</div>
@@ -404,25 +424,53 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
               </div>
             )}
 
-            {/* Tags */}
-            {song.tags.length > 0 && (
+            <div className="bg-muted/30 border border-border rounded-xl p-3 space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                <Tag className="w-3 h-3" /> Library Metadata
+              </div>
               <div className="flex flex-wrap gap-1.5">
+                {song.genre && <Badge variant="secondary" className="text-xs">{song.genre}</Badge>}
+                {song.mood && <Badge variant="secondary" className="text-xs">{song.mood}</Badge>}
+                {song.energy && <Badge variant="outline" className="text-xs capitalize">{song.energy} energy</Badge>}
+                {song.vocalStyle && <Badge variant="outline" className="text-xs capitalize"><Mic2 className="w-3 h-3 mr-1" />{song.vocalStyle}</Badge>}
+                {song.guitarType && <Badge variant="outline" className="text-xs capitalize">{song.guitarType} guitar</Badge>}
+                {song.decade && <Badge variant="outline" className="text-xs">{song.decade}</Badge>}
                 {song.tags.map((tag) => (
                   <Badge key={tag} variant="outline" className="text-xs capitalize">{tag.replace(/-/g, " ")}</Badge>
                 ))}
               </div>
-            )}
+              {song.similar && song.similar.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Similar songs: <span className="text-foreground">{song.similar.join(", ")}</span>
+                </div>
+              )}
+            </div>
 
-            {/* UG link */}
-            <a
-              href={song.ultimateGuitarUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-primary hover:underline font-medium"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Open on Ultimate Guitar
-            </a>
+            <div className="flex flex-col sm:flex-row gap-2">
+              {song.pdfUrl && (
+                <Button size="sm" className="gap-1.5" onClick={() => setFullscreenPdf(true)}>
+                  <FileText className="w-4 h-4" /> Open Sheet Music
+                </Button>
+              )}
+              {song.ultimateGuitarUrl && (
+                <a href={song.ultimateGuitarUrl} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                  <Button variant="outline" size="sm" className="gap-1.5 w-full sm:w-auto">
+                    <ExternalLink className="w-4 h-4" /> Open on Ultimate Guitar
+                  </Button>
+                </a>
+              )}
+            </div>
+
+            {fullscreenPdf && song.pdfUrl && (
+              <Suspense fallback={null}>
+                <FullscreenPdfViewer
+                  pdfUrl={song.pdfUrl}
+                  songTitle={song.title}
+                  onClose={() => setFullscreenPdf(false)}
+                  initialPage={pageNumber}
+                />
+              </Suspense>
+            )}
           </TabsContent>
 
           {/* ── PDF TAB ── */}

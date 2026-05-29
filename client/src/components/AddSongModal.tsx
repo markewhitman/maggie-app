@@ -1,18 +1,20 @@
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import type { Song } from "@/lib/data";
 import { sbPdfs, sbSongPdfs, sbSongs } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Upload, X, FileText, ExternalLink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Loader2, Music, Tag, Upload, X } from "lucide-react";
 
 interface Props {
   onClose: () => void;
   onSaved: () => void;
+  existingSongs?: Song[];
 }
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -25,15 +27,71 @@ function slugify(title: string, artist: string): string {
     .slice(0, 60);
 }
 
+function makeUniqueSongId(baseId: string, existingSongs: Song[]): string {
+  const existingIds = new Set(existingSongs.map((song) => song.id));
+  if (!existingIds.has(baseId)) return baseId;
+  let n = 2;
+  while (existingIds.has(`${baseId}-${n}`)) n += 1;
+  return `${baseId}-${n}`;
+}
+
 function isPdf(file: File): boolean {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
 
-export function AddSongModal({ onClose, onSaved }: Props) {
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
+function parseDuration(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const parts = trimmed.split(":").map((part) => part.trim());
+  if (parts.length === 1) {
+    const minutes = Number(parts[0]);
+    return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined;
+  }
+  if (parts.length === 2) {
+    const minutes = Number(parts[0]);
+    const seconds = Number(parts[1]);
+    if (Number.isFinite(minutes) && Number.isFinite(seconds) && minutes >= 0 && seconds >= 0) {
+      return Math.round(minutes * 60 + Math.min(seconds, 59));
+    }
+  }
+  return undefined;
+}
+
+function inferDecade(year: number): Song["decade"] {
+  if (!Number.isFinite(year)) return undefined;
+  if (year >= 2020) return "20s";
+  if (year >= 2010) return "10s";
+  if (year >= 2000) return "00s";
+  if (year >= 1990) return "90s";
+  if (year >= 1980) return "80s";
+  if (year >= 1970) return "70s";
+  if (year >= 1960) return "60s";
+  return undefined;
+}
+
+function SectionHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl bg-muted/40 border border-border px-3 py-2">
+      <div className="mt-0.5 text-primary">{icon}</div>
+      <div>
+        <div className="font-semibold text-sm">{title}</div>
+        <p className="text-xs text-muted-foreground leading-snug">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
   const { toast } = useToast();
 
   const [saving, setSaving] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [durationInput, setDurationInput] = useState("");
 
   const [form, setForm] = useState({
     title: "",
@@ -48,6 +106,8 @@ export function AddSongModal({ onClose, onSaved }: Props) {
     tempoFeel: "Mid-Tempo",
     mood: "",
     genre: "",
+    energy: "medium" as NonNullable<Song["energy"]>,
+    vocalStyle: "singalong" as NonNullable<Song["vocalStyle"]>,
     difficulty: "Intermediate" as Song["difficulty"],
     tags: "",
     performanceNote: "",
@@ -55,6 +115,21 @@ export function AddSongModal({ onClose, onSaved }: Props) {
   });
 
   const set = (k: keyof typeof form) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  const duplicateInfo = useMemo(() => {
+    const title = form.title.trim().toLowerCase();
+    const artist = form.artist.trim().toLowerCase();
+    if (!title) return { exact: null as Song | null, titleMatches: [] as Song[] };
+    const titleMatches = existingSongs.filter((song) => song.title.trim().toLowerCase() === title);
+    const exact = titleMatches.find((song) => artist && song.artist.trim().toLowerCase() === artist) ?? null;
+    return { exact, titleMatches };
+  }, [existingSongs, form.artist, form.title]);
+
+  const completion = useMemo(() => {
+    const fields = [form.title, form.artist, form.key, form.capo, form.chords, form.strumming, form.tempo, form.genre, form.mood];
+    const completed = fields.filter((field) => String(field).trim()).length;
+    return Math.round((completed / fields.length) * 100);
+  }, [form]);
 
   const handlePdfSelection = (file: File | undefined) => {
     if (!file) {
@@ -81,10 +156,36 @@ export function AddSongModal({ onClose, onSaved }: Props) {
       return;
     }
 
+    if (duplicateInfo.exact) {
+      toast({
+        title: "Duplicate song already exists",
+        description: `${duplicateInfo.exact.title} by ${duplicateInfo.exact.artist} is already in the library.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (form.ultimateGuitarUrl.trim()) {
+      try {
+        new URL(form.ultimateGuitarUrl.trim());
+      } catch {
+        toast({ title: "Ultimate Guitar URL looks invalid", description: "Leave it blank or paste a full https:// link.", variant: "destructive" });
+        return;
+      }
+    }
+
+    const parsedYear = parseInt(form.year, 10) || new Date().getFullYear();
+    const parsedDuration = parseDuration(durationInput);
+    if (durationInput.trim() && !parsedDuration) {
+      toast({ title: "Duration format not recognized", description: "Use m:ss, such as 3:45.", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
 
     try {
-      const songId = slugify(form.title, form.artist) || `song-${Date.now()}`;
+      const baseId = slugify(form.title, form.artist) || `song-${Date.now()}`;
+      const songId = makeUniqueSongId(baseId, existingSongs);
       let pdfUrl: string | undefined;
       let pdfFilename: string | undefined;
 
@@ -99,21 +200,25 @@ export function AddSongModal({ onClose, onSaved }: Props) {
         id: songId,
         title: form.title.trim(),
         artist: form.artist.trim(),
-        year: parseInt(form.year) || new Date().getFullYear(),
+        year: parsedYear,
         key: form.key.trim() || "Unknown",
         capo: form.capo.trim() || "No capo",
         chords: form.chords.trim(),
         strumming: form.strumming.trim(),
         guitarType: form.guitarType,
-        tempo: parseInt(form.tempo) || 120,
+        tempo: parseInt(form.tempo, 10) || 120,
         tempoFeel: form.tempoFeel,
         mood: form.mood.trim(),
         genre: form.genre.trim(),
+        decade: inferDecade(parsedYear),
+        energy: form.energy,
+        vocalStyle: form.vocalStyle,
         difficulty: form.difficulty,
         tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
         performanceNote: form.performanceNote.trim(),
         ultimateGuitarUrl: form.ultimateGuitarUrl.trim(),
         setPosition: 99,
+        duration: parsedDuration,
         userAdded: true,
         pdfUrl,
         pdfAssetId: undefined,
@@ -121,7 +226,7 @@ export function AddSongModal({ onClose, onSaved }: Props) {
       };
 
       await sbSongs.upsert(song);
-      toast({ title: "Song added!", description: form.title });
+      toast({ title: "Song added", description: `${song.title} is now in the cloud library.` });
       onSaved();
     } catch (err: any) {
       toast({
@@ -136,173 +241,222 @@ export function AddSongModal({ onClose, onSaved }: Props) {
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-display italic">Add New Song</DialogTitle>
+      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0">
+        <DialogHeader className="px-5 pt-5 pb-3 border-b border-border bg-card/95 sticky top-0 z-10">
+          <DialogTitle className="font-display italic flex items-center justify-between gap-3">
+            <span>Add New Song</span>
+            <Badge variant={completion >= 70 ? "default" : "secondary"} className="text-xs">
+              {completion}% filled
+            </Badge>
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground">
+            Required fields are first. Live-use details make the song easier to find, schedule, and perform later.
+          </p>
         </DialogHeader>
 
-        <div className="space-y-4 pt-2">
-          {/* Row 1: Title + Artist */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Title *</Label>
-              <Input value={form.title} onChange={(e) => set("title")(e.target.value)} placeholder="Mr. Brightside" data-testid="input-song-title" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Artist *</Label>
-              <Input value={form.artist} onChange={(e) => set("artist")(e.target.value)} placeholder="The Killers" data-testid="input-song-artist" />
-            </div>
-          </div>
-
-          {/* Row 2: Year + Genre */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Year</Label>
-              <Input value={form.year} onChange={(e) => set("year")(e.target.value)} placeholder="2003" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Genre</Label>
-              <Input value={form.genre} onChange={(e) => set("genre")(e.target.value)} placeholder="Indie Rock" />
-            </div>
-          </div>
-
-          {/* Key + Capo */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Key</Label>
-              <Input value={form.key} onChange={(e) => set("key")(e.target.value)} placeholder="C major" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Capo</Label>
-              <Input value={form.capo} onChange={(e) => set("capo")(e.target.value)} placeholder="Capo 2 or No capo" />
-            </div>
-          </div>
-
-          {/* Chords */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Chords</Label>
-            <Input value={form.chords} onChange={(e) => set("chords")(e.target.value)} placeholder="C, G, Am, F" />
-          </div>
-
-          {/* Strumming */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Strumming Pattern</Label>
-            <Input value={form.strumming} onChange={(e) => set("strumming")(e.target.value)} placeholder="D DU UDU" />
-          </div>
-
-          {/* Tempo + Guitar type + Difficulty */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Tempo (BPM)</Label>
-              <Input value={form.tempo} onChange={(e) => set("tempo")(e.target.value)} placeholder="120" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Guitar</Label>
-              <Select value={form.guitarType} onValueChange={(v) => set("guitarType")(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="acoustic">Acoustic</SelectItem>
-                  <SelectItem value="electric">Electric</SelectItem>
-                  <SelectItem value="either">Either</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Difficulty</Label>
-              <Select value={form.difficulty} onValueChange={(v) => set("difficulty")(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Beginner">Beginner</SelectItem>
-                  <SelectItem value="Intermediate">Intermediate</SelectItem>
-                  <SelectItem value="Advanced">Advanced</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Tempo feel + Mood */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Tempo Feel</Label>
-              <Select value={form.tempoFeel} onValueChange={(v) => set("tempoFeel")(v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["Slow", "Slow-Mid", "Mid-Tempo", "Up-Tempo", "Very Fast", "Ballad", "Driving"].map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Mood</Label>
-              <Input value={form.mood} onChange={(e) => set("mood")(e.target.value)} placeholder="nostalgic, joyful" />
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Tags (comma-separated)</Label>
-            <Input value={form.tags} onChange={(e) => set("tags")(e.target.value)} placeholder="crowd-pleaser, singalong, 80s" />
-          </div>
-
-          {/* Performance note */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Stage Tip / Performance Note</Label>
-            <Textarea
-              value={form.performanceNote}
-              onChange={(e) => set("performanceNote")(e.target.value)}
-              placeholder="Key things to remember when playing this live…"
-              rows={2}
-            />
-          </div>
-
-          {/* UG URL */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1">
-              Ultimate Guitar URL <ExternalLink className="w-3 h-3 text-muted-foreground" />
-            </Label>
-            <Input
-              value={form.ultimateGuitarUrl}
-              onChange={(e) => set("ultimateGuitarUrl")(e.target.value)}
-              placeholder="https://tabs.ultimate-guitar.com/tab/…"
-            />
-          </div>
-
-          {/* PDF upload */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sheet Music / Tab PDF (optional)</Label>
-            {pdfFile ? (
-              <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
-                <FileText className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-sm flex-1 truncate">{pdfFile.name}</span>
-                <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => setPdfFile(null)}>
-                  <X className="w-3.5 h-3.5" />
-                </Button>
+        <div className="space-y-5 p-5">
+          {duplicateInfo.exact && (
+            <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold text-destructive">This song is already in the library.</div>
+                <div className="text-muted-foreground">Open the existing song to edit it, or change the title/artist before saving.</div>
               </div>
-            ) : (
-              <label className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-2.5 cursor-pointer hover:border-primary/50 transition-colors">
-                <Upload className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Attach a PDF</span>
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={(e) => handlePdfSelection(e.target.files?.[0])}
-                />
-              </label>
-            )}
-            <p className="text-xs text-muted-foreground">
-              PDFs upload to Supabase Storage and sync through the song PDF map.
-            </p>
-          </div>
+            </div>
+          )}
+          {!duplicateInfo.exact && duplicateInfo.titleMatches.length > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
+              <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold text-amber-800 dark:text-amber-200">Same title already exists.</div>
+                <div className="text-amber-900/80 dark:text-amber-100/80">
+                  Existing: {duplicateInfo.titleMatches.slice(0, 3).map((song) => `${song.title} — ${song.artist}`).join("; ")}
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <Button onClick={handleSave} disabled={saving} className="flex-1 gap-1.5" data-testid="button-save-song">
+          <section className="space-y-3">
+            <SectionHeader icon={<Music className="w-4 h-4" />} title="Identity" description="The minimum needed to make the song searchable and unique." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Title *</Label>
+                <Input value={form.title} onChange={(e) => set("title")(e.target.value)} placeholder="Mr. Brightside" data-testid="input-song-title" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Artist *</Label>
+                <Input value={form.artist} onChange={(e) => set("artist")(e.target.value)} placeholder="The Killers" data-testid="input-song-artist" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Year</Label>
+                <Input value={form.year} onChange={(e) => set("year")(e.target.value)} placeholder="2003" inputMode="numeric" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Genre</Label>
+                <Input value={form.genre} onChange={(e) => set("genre")(e.target.value)} placeholder="Indie Rock" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader icon={<Guitar className="w-4 h-4" />} title="Live essentials" description="These are the details you need at a glance in Stage mode." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Key</Label>
+                <Input value={form.key} onChange={(e) => set("key")(e.target.value)} placeholder="C major" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Capo</Label>
+                <Input value={form.capo} onChange={(e) => set("capo")(e.target.value)} placeholder="Capo 2 or No capo" />
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {["No capo", "Capo 1", "Capo 2", "Capo 3"].map((capo) => (
+                    <button key={capo} type="button" onClick={() => set("capo")(capo)} className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary/50">
+                      {capo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tempo (BPM)</Label>
+                <Input value={form.tempo} onChange={(e) => set("tempo")(e.target.value)} placeholder="120" inputMode="numeric" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs flex items-center gap-1"><Clock className="w-3 h-3" /> Duration</Label>
+                <Input value={durationInput} onChange={(e) => setDurationInput(e.target.value)} placeholder="3:45" inputMode="numeric" />
+              </div>
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label className="text-xs">Chords</Label>
+                <Input value={form.chords} onChange={(e) => set("chords")(e.target.value)} placeholder="C, G, Am, F" />
+              </div>
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label className="text-xs">Strumming Pattern</Label>
+                <Input value={form.strumming} onChange={(e) => set("strumming")(e.target.value)} placeholder="D DU UDU" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader icon={<Tag className="w-4 h-4" />} title="Findability" description="These fields power filters, audience browsing, and better setlist planning." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Difficulty</Label>
+                <Select value={form.difficulty} onValueChange={(v) => set("difficulty")(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Beginner">Beginner</SelectItem>
+                    <SelectItem value="Intermediate">Intermediate</SelectItem>
+                    <SelectItem value="Advanced">Advanced</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Guitar</Label>
+                <Select value={form.guitarType} onValueChange={(v) => set("guitarType")(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="acoustic">Acoustic</SelectItem>
+                    <SelectItem value="electric">Electric</SelectItem>
+                    <SelectItem value="either">Either</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tempo Feel</Label>
+                <Select value={form.tempoFeel} onValueChange={(v) => set("tempoFeel")(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["Slow", "Slow-Mid", "Mid-Tempo", "Up-Tempo", "Very Fast", "Ballad", "Driving", "Upbeat"].map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Energy</Label>
+                <Select value={form.energy} onValueChange={(v) => set("energy")(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vocal Style</Label>
+                <Select value={form.vocalStyle} onValueChange={(v) => set("vocalStyle")(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="storytelling">Storytelling</SelectItem>
+                    <SelectItem value="singalong">Singalong</SelectItem>
+                    <SelectItem value="emotional">Emotional</SelectItem>
+                    <SelectItem value="powerful">Powerful</SelectItem>
+                    <SelectItem value="conversational">Conversational</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mood</Label>
+                <Input value={form.mood} onChange={(e) => set("mood")(e.target.value)} placeholder="nostalgic, joyful" />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 space-y-1.5">
+                <Label className="text-xs">Tags (comma-separated)</Label>
+                <Input value={form.tags} onChange={(e) => set("tags")(e.target.value)} placeholder="crowd-pleaser, singalong, 80s" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader icon={<FileText className="w-4 h-4" />} title="Resources and stage note" description="Attach the sheet music and record the one thing you need to remember live." />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Stage Tip / Performance Note</Label>
+                <Textarea
+                  value={form.performanceNote}
+                  onChange={(e) => set("performanceNote")(e.target.value)}
+                  placeholder="Key things to remember when playing this live…"
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs flex items-center gap-1">
+                  Ultimate Guitar URL <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                </Label>
+                <Input value={form.ultimateGuitarUrl} onChange={(e) => set("ultimateGuitarUrl")(e.target.value)} placeholder="https://tabs.ultimate-guitar.com/tab/…" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Sheet Music / Tab PDF (optional)</Label>
+                {pdfFile ? (
+                  <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                    <div className="text-sm flex-1 min-w-0">
+                      <div className="truncate font-medium">{pdfFile.name}</div>
+                      <div className="text-xs text-muted-foreground">{formatBytes(pdfFile.size)} · will upload when you save</div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => setPdfFile(null)}>
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                    <Upload className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Attach a PDF under 20 MB</span>
+                    <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => handlePdfSelection(e.target.files?.[0])} />
+                  </label>
+                )}
+                <p className="text-xs text-muted-foreground">PDFs upload to Supabase Storage and sync through the song PDF map.</p>
+              </div>
+            </div>
+          </section>
+
+          <div className="flex flex-col-reverse sm:flex-row gap-2 pt-3 border-t border-border sticky bottom-0 bg-background/95 backdrop-blur py-3">
+            <Button variant="outline" onClick={onClose} disabled={saving} className="sm:w-32">Cancel</Button>
+            <Button onClick={handleSave} disabled={saving || !!duplicateInfo.exact} className="flex-1 gap-1.5" data-testid="button-save-song">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {saving ? "Saving…" : "Add Song"}
             </Button>
-            <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
           </div>
         </div>
       </DialogContent>

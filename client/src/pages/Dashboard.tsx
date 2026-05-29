@@ -7,8 +7,9 @@ import { AddSongModal } from "@/components/AddSongModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 
@@ -117,6 +118,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [sortMode, setSortMode] = useState<"library" | "title" | "artist" | "year" | "duration">("library");
+  const [quickFilters, setQuickFilters] = useState({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false });
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
   const [showFilters, setShowFilters] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -178,8 +181,15 @@ export default function Dashboard() {
 
   const refresh = () => { void loadSongs(); };
 
+  const stats = useMemo(() => {
+    const withPdf = songs.filter((song) => !!song.pdfUrl).length;
+    const custom = songs.filter((song) => !!song.userAdded).length;
+    const missingDuration = songs.filter((song) => !song.duration).length;
+    return { withPdf, custom, missingDuration };
+  }, [songs]);
+
   const filtered = useMemo(() => {
-    return songs.filter((s) => {
+    const visible = songs.filter((s) => {
       const q = search.toLowerCase();
       const matchSearch =
         !q ||
@@ -187,6 +197,8 @@ export default function Dashboard() {
         s.artist.toLowerCase().includes(q) ||
         (s.genre ?? "").toLowerCase().includes(q) ||
         (s.mood ?? "").toLowerCase().includes(q) ||
+        (s.key ?? "").toLowerCase().includes(q) ||
+        (s.chords ?? "").toLowerCase().includes(q) ||
         s.tags.some((t) => t.toLowerCase().includes(q));
 
       const matchGenre =
@@ -210,10 +222,24 @@ export default function Dashboard() {
         (activeFilters.capo === "With Capo" && s.capo !== "No capo") ||
         (activeFilters.capo === "No Capo" && (!s.capo || s.capo === "No capo"));
 
+      const matchQuick =
+        (!quickFilters.pdfOnly || !!s.pdfUrl) &&
+        (!quickFilters.needsPdf || !s.pdfUrl) &&
+        (!quickFilters.customOnly || !!s.userAdded) &&
+        (!quickFilters.missingDuration || !s.duration);
+
       return matchSearch && matchGenre && matchMood && matchDecade && matchEnergy &&
-             matchVocal && matchDiff && matchGuitar && matchCapo;
+             matchVocal && matchDiff && matchGuitar && matchCapo && matchQuick;
     });
-  }, [songs, search, activeFilters]);
+
+    return [...visible].sort((a, b) => {
+      if (sortMode === "title") return a.title.localeCompare(b.title);
+      if (sortMode === "artist") return a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
+      if (sortMode === "year") return (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title);
+      if (sortMode === "duration") return (a.duration ?? Number.MAX_SAFE_INTEGER) - (b.duration ?? Number.MAX_SAFE_INTEGER);
+      return (a.setPosition ?? 999) - (b.setPosition ?? 999) || a.title.localeCompare(b.title);
+    });
+  }, [songs, search, activeFilters, quickFilters, sortMode]);
 
   const toggleFilter = (key: string, val: string) => {
     setActiveFilters((prev) => ({
@@ -228,10 +254,21 @@ export default function Dashboard() {
 
   const clearFilters = () => {
     setActiveFilters({});
+    setQuickFilters({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false });
     setSearch("");
   };
 
-  const activeCount = Object.values(activeFilters).filter(Boolean).length + (search ? 1 : 0);
+  const toggleQuickFilter = (key: keyof typeof quickFilters) => {
+    setQuickFilters((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+      ...(key === "pdfOnly" ? { needsPdf: false } : {}),
+      ...(key === "needsPdf" ? { pdfOnly: false } : {}),
+    }));
+  };
+
+  const quickFilterCount = Object.values(quickFilters).filter(Boolean).length;
+  const activeCount = Object.values(activeFilters).filter(Boolean).length + quickFilterCount + (search ? 1 : 0);
 
   // Quick-access active filter chips for the bar
   const activeChips = Object.entries(activeFilters).filter(([, v]) => v);
@@ -239,20 +276,35 @@ export default function Dashboard() {
   return (
     <div>
       {/* Header row */}
-      <div className="flex items-start justify-between mb-5 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4 gap-3">
         <div>
           <h1 className="font-display font-bold text-xl italic mb-0.5">Song Library</h1>
           <p className="text-muted-foreground text-sm">{songs.length} songs · {filtered.length} showing</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setShowAddSong(true)} className="gap-1.5" data-testid="button-add-song">
+          <Button size="sm" onClick={() => setShowAddSong(true)} className="gap-1.5 w-full sm:w-auto" data-testid="button-add-song">
             <Plus className="w-4 h-4" /> Add Song
           </Button>
         </div>
       </div>
 
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <button type="button" onClick={() => toggleQuickFilter("pdfOnly")} className={`rounded-xl border px-3 py-2 text-left transition-colors ${quickFilters.pdfOnly ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><FileText className="w-3.5 h-3.5" /> PDFs</div>
+          <div className="font-semibold text-sm">{stats.withPdf}</div>
+        </button>
+        <button type="button" onClick={() => toggleQuickFilter("customOnly")} className={`rounded-xl border px-3 py-2 text-left transition-colors ${quickFilters.customOnly ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> Custom</div>
+          <div className="font-semibold text-sm">{stats.custom}</div>
+        </button>
+        <button type="button" onClick={() => toggleQuickFilter("missingDuration")} className={`rounded-xl border px-3 py-2 text-left transition-colors ${quickFilters.missingDuration ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Needs time</div>
+          <div className="font-semibold text-sm">{stats.missingDuration}</div>
+        </button>
+      </div>
+
       {/* Search + filter bar */}
-      <div className="flex gap-2 mb-3">
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -263,33 +315,58 @@ export default function Dashboard() {
             data-testid="input-search"
           />
         </div>
-        <Button
-          variant={showFilters ? "default" : "outline"}
-          size="icon"
-          onClick={() => setShowFilters((p) => !p)}
-          className="relative"
-          data-testid="button-filters"
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          {activeCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground rounded-full w-4 h-4 text-[10px] flex items-center justify-center font-bold">
-              {activeCount}
-            </span>
-          )}
-        </Button>
-        <Button
-          variant={viewMode === "grid" ? "default" : "outline"}
-          size="icon"
-          onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-          data-testid="button-viewmode"
-        >
-          {viewMode === "grid" ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-        </Button>
+        <div className="flex gap-2">
+          <Select value={sortMode} onValueChange={(v) => setSortMode(v as typeof sortMode)}>
+            <SelectTrigger className="w-[150px] gap-1" aria-label="Sort songs">
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="library">Library order</SelectItem>
+              <SelectItem value="title">Title A-Z</SelectItem>
+              <SelectItem value="artist">Artist A-Z</SelectItem>
+              <SelectItem value="year">Newest first</SelectItem>
+              <SelectItem value="duration">Shortest first</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant={showFilters ? "default" : "outline"}
+            size="icon"
+            onClick={() => setShowFilters((p) => !p)}
+            className="relative"
+            data-testid="button-filters"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            {activeCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground rounded-full w-4 h-4 text-[10px] flex items-center justify-center font-bold">
+                {activeCount}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant={viewMode === "grid" ? "default" : "outline"}
+            size="icon"
+            onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+            data-testid="button-viewmode"
+          >
+            {viewMode === "grid" ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       {/* Active filter chips */}
-      {activeChips.length > 0 && (
+      {(activeChips.length > 0 || quickFilterCount > 0 || search) && (
         <div className="flex flex-wrap gap-1.5 mb-3">
+          {search && (
+            <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => setSearch("")}>
+              Search: {search}
+              <X className="w-3 h-3" />
+            </Badge>
+          )}
+          {quickFilters.pdfOnly && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("pdfOnly")}>Has PDF<X className="w-3 h-3" /></Badge>}
+          {quickFilters.needsPdf && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("needsPdf")}>Needs PDF<X className="w-3 h-3" /></Badge>}
+          {quickFilters.customOnly && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("customOnly")}>Custom songs<X className="w-3 h-3" /></Badge>}
+          {quickFilters.missingDuration && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("missingDuration")}>Missing duration<X className="w-3 h-3" /></Badge>}
           {activeChips.map(([key, val]) => {
             const group = FILTER_GROUPS.find((g) => g.key === key);
             const label = group?.displayLabel(val) ?? val;
@@ -313,7 +390,13 @@ export default function Dashboard() {
 
       {/* Filters panel — Spotify-style grouped */}
       {showFilters && (
-        <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4 space-y-1">
+        <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4 space-y-3">
+          <div className="flex flex-wrap gap-1.5 pb-2 border-b border-border/50">
+            <Badge variant={quickFilters.pdfOnly ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("pdfOnly")}>Has PDF</Badge>
+            <Badge variant={quickFilters.needsPdf ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("needsPdf")}>Needs PDF</Badge>
+            <Badge variant={quickFilters.customOnly ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("customOnly")}>Custom</Badge>
+            <Badge variant={quickFilters.missingDuration ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("missingDuration")}>Missing duration</Badge>
+          </div>
           {FILTER_GROUPS.map((group) => {
             const isExpanded = expandedGroups[group.key] ?? true;
             const hasActive = !!activeFilters[group.key];
@@ -416,6 +499,7 @@ export default function Dashboard() {
       {/* Add song modal */}
       {showAddSong && (
         <AddSongModal
+          existingSongs={songs}
           onClose={() => setShowAddSong(false)}
           onSaved={() => { refresh(); setShowAddSong(false); }}
         />

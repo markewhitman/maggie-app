@@ -180,6 +180,7 @@ These are intentional current-state notes, not deployment steps:
 - Phase 5 enables RLS on the remaining core app tables and moves new audience links toward random audience slugs instead of raw setlist ids.
 - Phase 5.5 is a front-end polish pass: larger Stage controls, Focus mode, clearer Audience request buttons, setlist duplication, and PDF fit/last-page behavior.
 - Phase 5.6 polishes the setlist builder: visible runtime summaries, duplicate-song warnings, clearer drag/reorder affordances, builder clear-order support, and Stage progress reset.
+- Phase 5.7 polishes the song library and add/edit workflow: quick library stats/filters, sorting, clearer song cards, duplicate warnings, duration entry, and stronger song detail organization.
 - Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.
