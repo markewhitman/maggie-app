@@ -1,25 +1,80 @@
 import { useState, useEffect } from "react";
 import {
-  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
+  SortableContext,
+  useSortable,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { SEED_SONGS, type Song, type Setlist, type Venue, formatDuration, formatDurationLong, stageTimingStore } from "@/lib/data";
-import { sbSetlists, sbVenues, sbSession, sbSongs, getDeviceId, generateAudienceSlug, type SbSetlist, type SbVenue } from "@/lib/supabase";
+import {
+  SEED_SONGS,
+  type Song,
+  type Setlist,
+  type Venue,
+  formatDuration,
+  formatDurationLong,
+  stageTimingStore,
+} from "@/lib/data";
+import {
+  sbSetlists,
+  sbVenues,
+  sbSession,
+  sbSongs,
+  getDeviceId,
+  generateAudienceSlug,
+  type SbSetlist,
+  type SbVenue,
+} from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
-  Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag, Link2, Copy,
+  Plus,
+  GripVertical,
+  X,
+  Trash2,
+  Mic2,
+  Search,
+  Calendar,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  RefreshCw,
+  Wifi,
+  Clock,
+  Coffee,
+  Flag,
+  Link2,
+  Copy,
+  AlertTriangle,
 } from "lucide-react";
 
 // ─── Helpers: map Supabase rows ↔ local types ─────────────
@@ -53,38 +108,75 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function audienceUrlForSetlist(setlist: Pick<Setlist, "id" | "audienceSlug">): string {
+function audienceUrlForSetlist(
+  setlist: Pick<Setlist, "id" | "audienceSlug">,
+): string {
   const scope = setlist.audienceSlug || setlist.id;
-  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(scope)}`;
+  if (typeof window === "undefined")
+    return `#/audience/${encodeURIComponent(scope)}`;
   return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(scope)}`;
 }
 
 // ─── Sortable Item ────────────────────────────────────────
 
-function DraggableSong({ id, song, onRemove }: { id: string; song: Song; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+function DraggableSong({
+  id,
+  song,
+  index,
+  onRemove,
+}: {
+  id: string;
+  song: Song;
+  index: number;
+  onRemove: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 ${isDragging ? "opacity-50 shadow-lg" : ""}`}
     >
-      <span {...attributes} {...listeners} className="drag-handle cursor-grab text-muted-foreground">
-        <GripVertical className="w-4 h-4" />
+      <span className="w-6 h-6 rounded-full bg-muted text-muted-foreground text-[11px] font-semibold flex items-center justify-center shrink-0">
+        {index + 1}
+      </span>
+      <span
+        {...attributes}
+        {...listeners}
+        className="drag-handle cursor-grab text-muted-foreground hover:text-primary transition-colors"
+        title="Drag to reorder"
+      >
+        <GripVertical className="w-5 h-5" />
       </span>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{song?.title ?? id}</div>
         {song && (
           <div className="text-xs text-muted-foreground">
             {song.artist}
-            {song.duration && <span className="ml-1 opacity-70">· {formatDuration(song.duration)}</span>}
+            {song.duration && (
+              <span className="ml-1 opacity-70">
+                · {formatDuration(song.duration)}
+              </span>
+            )}
           </div>
         )}
       </div>
       {song?.capo && song.capo !== "No capo" && (
         <Badge className="capo-badge text-xs shrink-0">{song.capo}</Badge>
       )}
-      <Button variant="ghost" size="icon" className="w-6 h-6 shrink-0" onClick={onRemove}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="w-6 h-6 shrink-0"
+        onClick={onRemove}
+      >
         <X className="w-3.5 h-3.5" />
       </Button>
     </div>
@@ -94,7 +186,10 @@ function DraggableSong({ id, song, onRemove }: { id: string; song: Song; onRemov
 // ─── Venue Selector ──────────────────────────────────────
 
 function VenueSelector({
-  venues, value, onChange, onNewVenue,
+  venues,
+  value,
+  onChange,
+  onNewVenue,
 }: {
   venues: Venue[];
   value: string;
@@ -123,8 +218,12 @@ function VenueSelector({
           placeholder="Venue name…"
           className="flex-1"
         />
-        <Button size="sm" onClick={handleCreate}>Add</Button>
-        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>Cancel</Button>
+        <Button size="sm" onClick={handleCreate}>
+          Add
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+          Cancel
+        </Button>
       </div>
     );
   }
@@ -139,23 +238,28 @@ function VenueSelector({
           <SelectItem value="none">— No venue —</SelectItem>
           {venues.map((v) => (
             <SelectItem key={v.id} value={v.id}>
-              {v.name}{v.city ? ` · ${v.city}` : ""}
+              {v.name}
+              {v.city ? ` · ${v.city}` : ""}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" className="gap-1 shrink-0" onClick={() => setCreating(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1 shrink-0"
+        onClick={() => setCreating(true)}
+      >
         <Plus className="w-3.5 h-3.5" /> New
       </Button>
     </div>
   );
 }
 
-
 // ─── Runtime Timeline ─────────────────────────────────────
 
 const DEFAULT_SONG_DURATION = 210; // 3:30 fallback if song has no duration set
-const DEFAULT_BETWEEN_GAP = 30;    // 30s gap between songs (tuning/chat)
+const DEFAULT_BETWEEN_GAP = 30; // 30s gap between songs (tuning/chat)
 
 function RuntimeTimeline({ songs }: { songs: Song[] }) {
   const [intermissions, setIntermissions] = useState<number[]>([]);
@@ -165,7 +269,7 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
     setIntermissions((prev) =>
       prev.includes(afterIndex)
         ? prev.filter((i) => i !== afterIndex)
-        : [...prev, afterIndex].sort((a, b) => a - b)
+        : [...prev, afterIndex].sort((a, b) => a - b),
     );
   };
 
@@ -180,10 +284,16 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
     }
   });
 
-  const totalMusicTime = songs.reduce((sum, s) => sum + (s.duration ?? DEFAULT_SONG_DURATION), 0);
-  const totalShowTime = rows.length > 0
-    ? rows[rows.length - 1].startsAt + (songs[songs.length - 1]?.duration ?? DEFAULT_SONG_DURATION) + intermissions.length * intermissionDuration * 60
-    : 0;
+  const totalMusicTime = songs.reduce(
+    (sum, s) => sum + (s.duration ?? DEFAULT_SONG_DURATION),
+    0,
+  );
+  const totalShowTime =
+    rows.length > 0
+      ? rows[rows.length - 1].startsAt +
+        (songs[songs.length - 1]?.duration ?? DEFAULT_SONG_DURATION) +
+        intermissions.length * intermissionDuration * 60
+      : 0;
   const hasMissingDurations = songs.some((s) => !s.duration);
 
   return (
@@ -193,22 +303,32 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
         <div className="flex items-center gap-1.5 text-xs">
           <Clock className="w-3.5 h-3.5 text-primary" />
           <span className="font-semibold">Music:</span>
-          <span className="text-muted-foreground">{formatDurationLong(totalMusicTime)}</span>
+          <span className="text-muted-foreground">
+            {formatDurationLong(totalMusicTime)}
+          </span>
         </div>
         {intermissions.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs">
             <Coffee className="w-3.5 h-3.5 text-amber-500" />
             <span className="font-semibold">Breaks:</span>
-            <span className="text-muted-foreground">{formatDurationLong(intermissions.length * intermissionDuration * 60)}</span>
+            <span className="text-muted-foreground">
+              {formatDurationLong(
+                intermissions.length * intermissionDuration * 60,
+              )}
+            </span>
           </div>
         )}
         <div className="flex items-center gap-1.5 text-xs">
           <Flag className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
           <span className="font-semibold">~Show total:</span>
-          <span className="text-muted-foreground">{formatDurationLong(totalShowTime)}</span>
+          <span className="text-muted-foreground">
+            {formatDurationLong(totalShowTime)}
+          </span>
         </div>
         {hasMissingDurations && (
-          <span className="text-[10px] text-muted-foreground/50 italic">*estimated for unset songs</span>
+          <span className="text-[10px] text-muted-foreground/50 italic">
+            *estimated for unset songs
+          </span>
         )}
       </div>
 
@@ -233,16 +353,21 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
       {/* Per-song rows */}
       <div className="space-y-0.5">
         {rows.map(({ song, startsAt }, i) => (
-          <div key={song.id}>
+          <div key={`${song.id}-${i}`}>
             <div className="flex items-center gap-2 text-sm py-0.5">
-              <span className="w-5 text-right text-muted-foreground text-xs shrink-0">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground text-xs shrink-0">
+                {i + 1}
+              </span>
               <span className="flex-1 truncate">{song.title}</span>
               <span className="text-xs text-muted-foreground/70 shrink-0">
                 {formatDuration(song.duration ?? DEFAULT_SONG_DURATION)}
-                {!song.duration && <span className="text-[10px] ml-0.5 opacity-50">*</span>}
+                {!song.duration && (
+                  <span className="text-[10px] ml-0.5 opacity-50">*</span>
+                )}
               </span>
               <span className="text-xs text-muted-foreground/50 w-12 text-right shrink-0 font-mono">
-                @{Math.floor(startsAt / 60)}:{(startsAt % 60).toString().padStart(2, "0")}
+                @{Math.floor(startsAt / 60)}:
+                {(startsAt % 60).toString().padStart(2, "0")}
               </span>
             </div>
             {i < songs.length - 1 && (
@@ -255,7 +380,9 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
                 onClick={() => toggleIntermission(i)}
               >
                 <Coffee className="w-2.5 h-2.5" />
-                {intermissions.includes(i) ? `☕ Intermission (${intermissionDuration}m) ×` : "+ Intermission"}
+                {intermissions.includes(i)
+                  ? `☕ Intermission (${intermissionDuration}m) ×`
+                  : "+ Intermission"}
               </button>
             )}
           </div>
@@ -268,7 +395,8 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
           <span className="font-semibold">Est. show end:</span>
           <span className="text-muted-foreground">
             ~{formatDurationLong(totalShowTime)} from start
-            {intermissions.length > 0 && ` (incl. ${intermissions.length} intermission${intermissions.length > 1 ? "s" : ""})`}
+            {intermissions.length > 0 &&
+              ` (incl. ${intermissions.length} intermission${intermissions.length > 1 ? "s" : ""})`}
           </span>
         </div>
       )}
@@ -279,7 +407,14 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
 // ─── Setlist Card ─────────────────────────────────────────
 
 function SetlistCard({
-  setlist, songs, venues, onDelete, onLoad, onEdit, onDuplicate, onCopyAudienceLink,
+  setlist,
+  songs,
+  venues,
+  onDelete,
+  onLoad,
+  onEdit,
+  onDuplicate,
+  onCopyAudienceLink,
 }: {
   setlist: Setlist;
   songs: Song[];
@@ -295,13 +430,28 @@ function SetlistCard({
   const setlistSongs = setlist.songIds
     .map((id) => songs.find((s) => s.id === id))
     .filter(Boolean) as Song[];
+  const totalSeconds = setlistSongs.reduce(
+    (sum, song) => sum + (song.duration ?? DEFAULT_SONG_DURATION),
+    0,
+  );
+  const missingDurations = setlistSongs.some((song) => !song.duration);
+  const duplicateTitles = Array.from(
+    new Set(
+      setlist.songIds
+        .filter((id, index) => setlist.songIds.indexOf(id) !== index)
+        .map((id) => songs.find((s) => s.id === id)?.title)
+        .filter(Boolean) as string[],
+    ),
+  );
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h3 className="font-display font-bold italic truncate">{setlist.name}</h3>
+            <h3 className="font-display font-bold italic truncate">
+              {setlist.name}
+            </h3>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               {setlist.gigDate && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -313,10 +463,25 @@ function SetlistCard({
                   <MapPin className="w-3 h-3" /> {venue.name}
                 </span>
               )}
-              <span className="text-xs text-muted-foreground">{setlistSongs.length} songs</span>
+              <span className="text-xs text-muted-foreground">
+                {setlistSongs.length} songs
+              </span>
+              {setlistSongs.length > 0 && (
+                <span className="text-xs font-medium text-foreground/80 bg-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> ~
+                  {formatDurationLong(totalSeconds)}
+                  {missingDurations ? "*" : ""}
+                </span>
+              )}
+              {duplicateTitles.length > 0 && (
+                <span className="text-xs text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Duplicate song
+                </span>
+              )}
               {setlist.gigStartTime && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> {(() => {
+                  <Clock className="w-3 h-3" />{" "}
+                  {(() => {
                     const [h, m] = setlist.gigStartTime.split(":").map(Number);
                     const ampm = h >= 12 ? "PM" : "AM";
                     const h12 = h % 12 || 12;
@@ -330,34 +495,88 @@ function SetlistCard({
             <Button size="sm" onClick={onLoad} className="gap-1.5 text-xs h-8">
               <Mic2 className="w-3.5 h-3.5" /> Load Tonight
             </Button>
-            <Button variant="outline" size="sm" onClick={onCopyAudienceLink} className="gap-1.5 text-xs h-8" title="Copy audience request link">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCopyAudienceLink}
+              className="gap-1.5 text-xs h-8"
+              title="Copy audience request link"
+            >
               <Link2 className="w-3.5 h-3.5" /> Audience Link
             </Button>
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onEdit} title="Edit setlist">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={onEdit}
+              title="Edit setlist"
+            >
               <Pencil className="w-3.5 h-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onDuplicate} title="Duplicate setlist">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={onDuplicate}
+              title="Duplicate setlist"
+            >
               <Copy className="w-3.5 h-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => setExpanded((p) => !p)}>
-              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8"
+              onClick={() => setExpanded((p) => !p)}
+            >
+              {expanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
             </Button>
-            <Button variant="ghost" size="icon" className="w-8 h-8 text-destructive" onClick={onDelete}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8 text-destructive"
+              onClick={onDelete}
+            >
               <Trash2 className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
       </div>
       {expanded && (
-        <div className="border-t border-border px-4 pb-4 pt-3 space-y-1.5">
+        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
+          {duplicateTitles.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold">Duplicate song warning</div>
+                <div>
+                  {duplicateTitles.join(", ")} appears more than once. Edit the
+                  setlist to remove duplicate entries if that was not
+                  intentional.
+                </div>
+              </div>
+            </div>
+          )}
           {/* Song list with artist + capo */}
           {setlistSongs.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-2 text-sm">
-              <span className="w-5 text-right text-muted-foreground text-xs shrink-0">{i + 1}</span>
+            <div
+              key={`${s.id}-${i}`}
+              className="flex items-center gap-2 text-sm"
+            >
+              <span className="w-5 text-right text-muted-foreground text-xs shrink-0">
+                {i + 1}
+              </span>
               <span className="flex-1 truncate">{s.title}</span>
-              <span className="text-xs text-muted-foreground shrink-0">{s.artist}</span>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {s.artist}
+              </span>
               {s.capo && s.capo !== "No capo" && (
-                <Badge className="capo-badge text-[10px] shrink-0">{s.capo}</Badge>
+                <Badge className="capo-badge text-[10px] shrink-0">
+                  {s.capo}
+                </Badge>
               )}
             </div>
           ))}
@@ -394,7 +613,9 @@ export default function SetlistPage() {
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   // ─── Load from Supabase on mount ──────────────────────────
@@ -416,13 +637,19 @@ export default function SetlistPage() {
       }
     } catch (err) {
       console.error("Supabase load error:", err);
-      toast({ title: "Sync error", description: "Could not load from cloud. Check your connection.", variant: "destructive" });
+      toast({
+        title: "Sync error",
+        description: "Could not load from cloud. Check your connection.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
   // ─── Venue creation ───────────────────────────────────────
   const handleNewVenue = async (name: string): Promise<Venue> => {
@@ -456,7 +683,7 @@ export default function SetlistPage() {
 
   const toggleSong = (id: string) => {
     setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
@@ -466,11 +693,49 @@ export default function SetlistPage() {
 
   const filteredSongs = songs.filter(
     (s) =>
-      !selectedIds.includes(s.id) &&
-      (songSearch === "" ||
-        s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
-        s.artist.toLowerCase().includes(songSearch.toLowerCase()))
+      songSearch === "" ||
+      s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
+      s.artist.toLowerCase().includes(songSearch.toLowerCase()),
   );
+
+  const selectedDurationSeconds = selectedSongs.reduce(
+    (sum, song) => sum + (song.duration ?? DEFAULT_SONG_DURATION),
+    0,
+  );
+  const selectedMissingDurations = selectedSongs.some((song) => !song.duration);
+  const duplicateSelectedIds = selectedIds.filter(
+    (id, index) => selectedIds.indexOf(id) !== index,
+  );
+  const duplicateSelectedTitles = Array.from(
+    new Set(
+      duplicateSelectedIds
+        .map((id) => songs.find((s) => s.id === id)?.title)
+        .filter(Boolean) as string[],
+    ),
+  );
+
+  const addSongToBuilder = (id: string) => {
+    if (selectedIds.includes(id)) {
+      const song = songs.find((s) => s.id === id);
+      toast({
+        title: "Already in this setlist",
+        description: song
+          ? `“${song.title}” is already in the set order. Duplicates are blocked to keep Stage progress reliable.`
+          : "Duplicates are blocked to keep Stage progress reliable.",
+      });
+      return;
+    }
+    setSelectedIds((prev) => [...prev, id]);
+  };
+
+  const removeSongFromBuilder = (id: string) => {
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
+  };
+
+  const removeDuplicateSelections = () => {
+    setSelectedIds((prev) => Array.from(new Set(prev)));
+    toast({ title: "Duplicate entries removed" });
+  };
 
   const resetBuilder = () => {
     setShowBuilder(false);
@@ -504,6 +769,18 @@ export default function SetlistPage() {
       toast({ title: "Add at least one song", variant: "destructive" });
       return;
     }
+    const duplicates = selectedIds.filter(
+      (id, index) => selectedIds.indexOf(id) !== index,
+    );
+    if (duplicates.length > 0) {
+      toast({
+        title: "Remove duplicate songs first",
+        description:
+          "Duplicate entries can break Stage progress tracking. Use the duplicate warning to clean up the set order.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSyncing(true);
     const venueId = selectedVenueId === "none" ? null : selectedVenueId;
     const now = new Date().toISOString();
@@ -522,9 +799,16 @@ export default function SetlistPage() {
           setSetlists((prev) =>
             prev.map((s) =>
               s.id === editingSetlistId
-                ? { ...s, name: gigName, gigDate: gigDate || undefined, gigStartTime: gigStartTime || undefined, venueId: venueId ?? undefined, songIds: selectedIds }
-                : s
-            )
+                ? {
+                    ...s,
+                    name: gigName,
+                    gigDate: gigDate || undefined,
+                    gigStartTime: gigStartTime || undefined,
+                    venueId: venueId ?? undefined,
+                    songIds: selectedIds,
+                  }
+                : s,
+            ),
           );
           toast({ title: "Setlist updated!", description: gigName });
         }
@@ -548,7 +832,11 @@ export default function SetlistPage() {
       }
     } catch (err) {
       console.error(err);
-      toast({ title: "Save failed", description: "Could not save to cloud.", variant: "destructive" });
+      toast({
+        title: "Save failed",
+        description: "Could not save to cloud.",
+        variant: "destructive",
+      });
     } finally {
       setSyncing(false);
     }
@@ -571,10 +859,17 @@ export default function SetlistPage() {
       });
       setHasActiveSession(true);
       setActiveSessionCount(setlist.songIds.length);
-      toast({ title: "Set loaded for tonight!", description: "Head to the Stage tab to start." });
+      toast({
+        title: "Set loaded for tonight!",
+        description: "Head to the Stage tab to start.",
+      });
     } catch (err) {
       console.error(err);
-      toast({ title: "Load failed", description: "Could not sync to cloud.", variant: "destructive" });
+      toast({
+        title: "Load failed",
+        description: "Could not sync to cloud.",
+        variant: "destructive",
+      });
     } finally {
       setSyncing(false);
     }
@@ -583,7 +878,8 @@ export default function SetlistPage() {
   const clearSession = async () => {
     const confirmed = await confirm({
       title: "Clear active set?",
-      description: "This removes the currently loaded Stage session, but keeps your saved setlists.",
+      description:
+        "This removes the currently loaded Stage session, but keeps your saved setlists.",
       confirmLabel: "Clear active set",
       destructive: true,
     });
@@ -597,7 +893,8 @@ export default function SetlistPage() {
   const deleteSetlist = async (id: string) => {
     const confirmed = await confirm({
       title: "Delete this setlist?",
-      description: "This permanently deletes the saved setlist. This cannot be undone.",
+      description:
+        "This permanently deletes the saved setlist. This cannot be undone.",
       confirmLabel: "Delete setlist",
       destructive: true,
     });
@@ -631,10 +928,17 @@ export default function SetlistPage() {
     try {
       await sbSetlists.save(newSl);
       setSetlists((prev) => [sbToSetlist(newSl), ...prev]);
-      toast({ title: "Setlist duplicated", description: `${setlist.name} Copy` });
+      toast({
+        title: "Setlist duplicated",
+        description: `${setlist.name} Copy`,
+      });
     } catch (err) {
       console.error(err);
-      toast({ title: "Duplicate failed", description: "Could not create a copy in the cloud.", variant: "destructive" });
+      toast({
+        title: "Duplicate failed",
+        description: "Could not create a copy in the cloud.",
+        variant: "destructive",
+      });
     } finally {
       setSyncing(false);
     }
@@ -644,7 +948,10 @@ export default function SetlistPage() {
     const url = audienceUrlForSetlist(setlist);
     try {
       await navigator.clipboard.writeText(url);
-      toast({ title: "Audience link copied", description: "Share this QR/link for this specific gig." });
+      toast({
+        title: "Audience link copied",
+        description: "Share this QR/link for this specific gig.",
+      });
     } catch {
       toast({
         title: "Audience link",
@@ -658,19 +965,35 @@ export default function SetlistPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display font-bold text-xl italic mb-0.5">Setlists</h1>
+          <h1 className="font-display font-bold text-xl italic mb-0.5">
+            Setlists
+          </h1>
           <div className="flex items-center gap-2">
-            <p className="text-muted-foreground text-sm">Build and save setlists per gig</p>
+            <p className="text-muted-foreground text-sm">
+              Build and save setlists per gig
+            </p>
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
               <Wifi className="w-3 h-3" /> Synced
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={loadData} title="Refresh from cloud">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-8 h-8"
+            onClick={loadData}
+            title="Refresh from cloud"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            />
           </Button>
-          <Button onClick={() => setShowBuilder(true)} className="gap-1.5" data-testid="button-new-setlist">
+          <Button
+            onClick={() => setShowBuilder(true)}
+            className="gap-1.5"
+            data-testid="button-new-setlist"
+          >
             <Plus className="w-4 h-4" /> New Setlist
           </Button>
         </div>
@@ -681,9 +1004,16 @@ export default function SetlistPage() {
           <Mic2 className="w-4 h-4 text-primary shrink-0" />
           <div className="flex-1 text-sm">
             <span className="font-semibold">Active set loaded</span>
-            <span className="text-muted-foreground ml-2">{activeSessionCount} songs queued</span>
+            <span className="text-muted-foreground ml-2">
+              {activeSessionCount} songs queued
+            </span>
           </div>
-          <Button size="sm" variant="outline" onClick={clearSession} className="text-xs gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={clearSession}
+            className="text-xs gap-1"
+          >
             <X className="w-3 h-3" /> Clear
           </Button>
         </div>
@@ -691,13 +1021,17 @@ export default function SetlistPage() {
 
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
+          ))}
         </div>
       ) : setlists.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <div className="text-4xl mb-3">📋</div>
           <div className="font-medium">No setlists yet</div>
-          <div className="text-sm mt-1">Create your first setlist for tonight's gig</div>
+          <div className="text-sm mt-1">
+            Create your first setlist for tonight's gig
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -720,25 +1054,45 @@ export default function SetlistPage() {
       {ConfirmDialog}
 
       {/* Builder Dialog */}
-      <Dialog open={showBuilder} onOpenChange={(open) => { if (!open) resetBuilder(); }}>
+      <Dialog
+        open={showBuilder}
+        onOpenChange={(open) => {
+          if (!open) resetBuilder();
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display italic">{editingSetlistId ? "Edit Setlist" : "New Setlist"}</DialogTitle>
+            <DialogTitle className="font-display italic">
+              {editingSetlistId ? "Edit Setlist" : "New Setlist"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Gig Name *</Label>
-              <Input value={gigName} onChange={(e) => setGigName(e.target.value)} placeholder="Saturday Night at The Burren" data-testid="input-gig-name" />
+              <Input
+                value={gigName}
+                onChange={(e) => setGigName(e.target.value)}
+                placeholder="Saturday Night at The Burren"
+                data-testid="input-gig-name"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs flex items-center gap-1"><Calendar className="w-3 h-3" /> Gig Date</Label>
-                <Input type="date" value={gigDate} onChange={(e) => setGigDate(e.target.value)} />
+                <Label className="text-xs flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> Gig Date
+                </Label>
+                <Input
+                  type="date"
+                  value={gigDate}
+                  onChange={(e) => setGigDate(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs flex items-center gap-1"><Clock className="w-3 h-3" /> Approx. Start Time</Label>
+                <Label className="text-xs flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Approx. Start Time
+                </Label>
                 <Input
                   type="time"
                   value={gigStartTime}
@@ -748,7 +1102,9 @@ export default function SetlistPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs flex items-center gap-1"><MapPin className="w-3 h-3" /> Venue</Label>
+              <Label className="text-xs flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> Venue
+              </Label>
               <VenueSelector
                 venues={venues}
                 value={selectedVenueId}
@@ -758,26 +1114,103 @@ export default function SetlistPage() {
             </div>
 
             <div>
-              <Label className="text-xs mb-2 block flex items-center gap-2">
-              Set Order ({selectedIds.length} songs)
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <Label className="text-xs flex items-center gap-2">
+                  Set Order ({selectedIds.length} songs)
+                  {selectedIds.length > 0 && (
+                    <span className="text-muted-foreground font-normal">
+                      · ~{formatDurationLong(selectedDurationSeconds)}
+                      {selectedMissingDurations ? "*" : ""}
+                    </span>
+                  )}
+                </Label>
+                {selectedIds.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => setSelectedIds([])}
+                  >
+                    Clear order
+                  </Button>
+                )}
+              </div>
               {selectedIds.length > 0 && (
-                <span className="text-muted-foreground font-normal">
-                  · ~{formatDurationLong(selectedSongs.reduce((s, song) => s + (song.duration ?? 210), 0))}
-                </span>
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  <div className="rounded-lg border border-border bg-muted/30 px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Songs
+                    </div>
+                    <div className="text-sm font-semibold">
+                      {selectedIds.length}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Music time
+                    </div>
+                    <div className="text-sm font-semibold">
+                      ~{formatDurationLong(selectedDurationSeconds)}
+                      {selectedMissingDurations ? "*" : ""}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/30 px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Reorder
+                    </div>
+                    <div className="text-sm font-semibold flex items-center gap-1">
+                      <GripVertical className="w-3.5 h-3.5" /> Drag
+                    </div>
+                  </div>
+                </div>
               )}
-            </Label>
+              {duplicateSelectedTitles.length > 0 && (
+                <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-semibold">
+                      Duplicate entries detected
+                    </div>
+                    <div>
+                      {duplicateSelectedTitles.join(", ")} appears more than
+                      once. Remove duplicates before saving.
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs shrink-0"
+                    onClick={removeDuplicateSelections}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              )}
               {selectedIds.length === 0 ? (
                 <div className="border border-dashed border-border rounded-xl p-6 text-center text-sm text-muted-foreground">
                   Add songs from the list below
                 </div>
               ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext items={selectedIds} strategy={verticalListSortingStrategy}>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={selectedIds}
+                    strategy={verticalListSortingStrategy}
+                  >
                     <div className="space-y-1.5">
-                      {selectedIds.map((id) => {
+                      {selectedIds.map((id, index) => {
                         const song = songs.find((s) => s.id === id);
                         return song ? (
-                          <DraggableSong key={id} id={id} song={song} onRemove={() => toggleSong(id)} />
+                          <DraggableSong
+                            key={`${id}-${index}`}
+                            id={id}
+                            song={song}
+                            index={index}
+                            onRemove={() => removeSongFromBuilder(id)}
+                          />
                         ) : null;
                       })}
                     </div>
@@ -799,28 +1232,66 @@ export default function SetlistPage() {
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-xl p-2">
                 {filteredSongs.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-muted-foreground">All songs added or no matches</div>
+                  <div className="text-center py-4 text-xs text-muted-foreground">
+                    No matching songs
+                  </div>
                 ) : (
-                  filteredSongs.map((song) => (
-                    <button
-                      key={song.id}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-muted transition-colors"
-                      onClick={() => toggleSong(song.id)}
-                    >
-                      <Plus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-sm flex-1">{song.title}</span>
-                      <span className="text-xs text-muted-foreground">{song.artist}</span>
-                    </button>
-                  ))
+                  filteredSongs.map((song) => {
+                    const alreadyAdded = selectedIds.includes(song.id);
+                    return (
+                      <button
+                        key={song.id}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${alreadyAdded ? "bg-muted/60 text-muted-foreground" : "hover:bg-muted"}`}
+                        onClick={() => addSongToBuilder(song.id)}
+                        title={
+                          alreadyAdded
+                            ? "Already in this setlist"
+                            : "Add to set order"
+                        }
+                      >
+                        <Plus
+                          className={`w-3.5 h-3.5 shrink-0 ${alreadyAdded ? "text-muted-foreground/50" : "text-muted-foreground"}`}
+                        />
+                        <span className="text-sm flex-1">{song.title}</span>
+                        <span className="text-xs text-muted-foreground hidden sm:inline">
+                          {song.artist}
+                        </span>
+                        {song.duration && (
+                          <span className="text-[11px] text-muted-foreground/70">
+                            {formatDuration(song.duration)}
+                          </span>
+                        )}
+                        {alreadyAdded && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] shrink-0"
+                          >
+                            Added
+                          </Badge>
+                        )}
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
 
             <div className="flex gap-2 pt-2">
-              <Button onClick={saveSetlist} className="flex-1" disabled={syncing} data-testid="button-save-setlist">
-                {syncing ? "Saving…" : editingSetlistId ? "Update Setlist" : "Save Setlist"}
+              <Button
+                onClick={saveSetlist}
+                className="flex-1"
+                disabled={syncing}
+                data-testid="button-save-setlist"
+              >
+                {syncing
+                  ? "Saving…"
+                  : editingSetlistId
+                    ? "Update Setlist"
+                    : "Save Setlist"}
               </Button>
-              <Button variant="outline" onClick={resetBuilder}>Cancel</Button>
+              <Button variant="outline" onClick={resetBuilder}>
+                Cancel
+              </Button>
             </div>
           </div>
         </DialogContent>

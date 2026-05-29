@@ -1,31 +1,88 @@
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import {
-  DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
+  SortableContext,
+  useSortable,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { SEED_SONGS, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
-import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, sbSongs, requestScopeForSetlist, type SbRequest, type SbPerfNote } from "@/lib/supabase";
+import {
+  SEED_SONGS,
+  formatDuration,
+  formatDurationLong,
+  stageTimingStore,
+  type Song,
+  type PerformanceNote,
+  type StageTimingPrefs,
+} from "@/lib/data";
+import {
+  sbSession,
+  sbRequests,
+  sbSongPdfs,
+  sbSetlists,
+  sbPerfNotes,
+  sbSongs,
+  requestScopeForSetlist,
+  type SbRequest,
+  type SbPerfNote,
+} from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
-  CheckCircle2, SkipForward, RotateCcw, GripVertical, Star,
-  Maximize2, ClipboardList, X, Pencil, Plus, Search, FileText, Bell,
-  ThumbsUp, ThumbsDown, Shuffle, Info, Music2, Clock,
+  CheckCircle2,
+  SkipForward,
+  RotateCcw,
+  GripVertical,
+  Star,
+  Maximize2,
+  ClipboardList,
+  X,
+  Pencil,
+  Plus,
+  Search,
+  FileText,
+  Bell,
+  ThumbsUp,
+  ThumbsDown,
+  Shuffle,
+  Info,
+  Music2,
+  Clock,
 } from "lucide-react";
 
 const FullscreenPdfViewer = lazy(() =>
-  import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
+  import("@/components/FullscreenPdfViewer").then((mod) => ({
+    default: mod.FullscreenPdfViewer,
+  })),
 );
 
 // ─── Session type ─────────────────────────────────────────
@@ -36,7 +93,6 @@ interface Session {
   playedIds: string[];
   skippedIds: string[];
 }
-
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -50,7 +106,8 @@ function sbToPerfNote(r: SbPerfNote): PerformanceNote {
     gigDate: r.gig_date ?? undefined,
     crowdReaction: r.crowd_reaction,
     tempoFeel: r.tempo_feel as PerformanceNote["tempoFeel"],
-    lyricsConfidence: r.lyrics_confidence as PerformanceNote["lyricsConfidence"],
+    lyricsConfidence:
+      r.lyrics_confidence as PerformanceNote["lyricsConfidence"],
     notes: r.notes,
     createdAt: r.created_at,
   };
@@ -82,7 +139,12 @@ async function saveSession(session: Session) {
 // ─── Performance Note Modal ───────────────────────────────
 
 function PerfNoteModal({
-  song, setlistId, gigDate, existing, onSaved, onClose,
+  song,
+  setlistId,
+  gigDate,
+  existing,
+  onSaved,
+  onClose,
 }: {
   song: Song;
   setlistId: string;
@@ -92,10 +154,18 @@ function PerfNoteModal({
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const [mode, setMode] = useState<"update" | "new">(existing ? "update" : "new");
-  const [crowdReaction, setCrowdReaction] = useState(existing?.crowdReaction ?? 3);
-  const [tempoFeel, setTempoFeel] = useState<PerformanceNote["tempoFeel"]>(existing?.tempoFeel ?? "Spot-on");
-  const [lyricsConfidence, setLyricsConfidence] = useState<PerformanceNote["lyricsConfidence"]>(existing?.lyricsConfidence ?? "Good");
+  const [mode, setMode] = useState<"update" | "new">(
+    existing ? "update" : "new",
+  );
+  const [crowdReaction, setCrowdReaction] = useState(
+    existing?.crowdReaction ?? 3,
+  );
+  const [tempoFeel, setTempoFeel] = useState<PerformanceNote["tempoFeel"]>(
+    existing?.tempoFeel ?? "Spot-on",
+  );
+  const [lyricsConfidence, setLyricsConfidence] = useState<
+    PerformanceNote["lyricsConfidence"]
+  >(existing?.lyricsConfidence ?? "Good");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -117,19 +187,20 @@ function PerfNoteModal({
   };
 
   const handleSave = async () => {
-    const note: PerformanceNote = existing && mode === "update"
-      ? { ...existing, crowdReaction, tempoFeel, lyricsConfidence, notes }
-      : {
-          id: uid(),
-          setlistId,
-          songId: song.id,
-          gigDate,
-          crowdReaction,
-          tempoFeel,
-          lyricsConfidence,
-          notes,
-          createdAt: new Date().toISOString(),
-        };
+    const note: PerformanceNote =
+      existing && mode === "update"
+        ? { ...existing, crowdReaction, tempoFeel, lyricsConfidence, notes }
+        : {
+            id: uid(),
+            setlistId,
+            songId: song.id,
+            gigDate,
+            crowdReaction,
+            tempoFeel,
+            lyricsConfidence,
+            notes,
+            createdAt: new Date().toISOString(),
+          };
 
     setSaving(true);
     try {
@@ -140,7 +211,8 @@ function PerfNoteModal({
     } catch (err: any) {
       toast({
         title: "Notes not saved",
-        description: err?.message ?? "Could not save performance notes to the cloud.",
+        description:
+          err?.message ?? "Could not save performance notes to the cloud.",
         variant: "destructive",
       });
     } finally {
@@ -190,8 +262,14 @@ function PerfNoteModal({
             <Label className="text-xs mb-2 block">Crowd Reaction</Label>
             <div className="flex gap-1.5">
               {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} onClick={() => setCrowdReaction(n)} className="p-1">
-                  <Star className={`w-6 h-6 transition-colors ${n <= crowdReaction ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />
+                <button
+                  key={n}
+                  onClick={() => setCrowdReaction(n)}
+                  className="p-1"
+                >
+                  <Star
+                    className={`w-6 h-6 transition-colors ${n <= crowdReaction ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`}
+                  />
                 </button>
               ))}
             </div>
@@ -199,8 +277,15 @@ function PerfNoteModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs mb-1.5 block">Tempo Feel</Label>
-              <Select value={tempoFeel} onValueChange={(v) => setTempoFeel(v as PerformanceNote["tempoFeel"])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={tempoFeel}
+                onValueChange={(v) =>
+                  setTempoFeel(v as PerformanceNote["tempoFeel"])
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Dragged">Dragged</SelectItem>
                   <SelectItem value="Spot-on">Spot-on ✓</SelectItem>
@@ -210,8 +295,15 @@ function PerfNoteModal({
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Lyrics Confidence</Label>
-              <Select value={lyricsConfidence} onValueChange={(v) => setLyricsConfidence(v as PerformanceNote["lyricsConfidence"])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={lyricsConfidence}
+                onValueChange={(v) =>
+                  setLyricsConfidence(v as PerformanceNote["lyricsConfidence"])
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Good">Good ✓</SelectItem>
                   <SelectItem value="Blanked">Blanked</SelectItem>
@@ -222,13 +314,24 @@ function PerfNoteModal({
           </div>
           <div>
             <Label className="text-xs mb-1.5 block">Additional Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Crowd loved it, key change tricky, nail the bridge…" rows={3} />
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Crowd loved it, key change tricky, nail the bridge…"
+              rows={3}
+            />
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave} className="flex-1" disabled={saving}>
-              {saving ? "Saving…" : mode === "new" ? "Save New Note" : "Update Note"}
+              {saving
+                ? "Saving…"
+                : mode === "new"
+                  ? "Save New Note"
+                  : "Update Note"}
             </Button>
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -239,53 +342,94 @@ function PerfNoteModal({
 // ─── Edit Setlist Modal ───────────────────────────────────
 
 function EditSetlistModal({
-  session, allSongs, onSave, onClose,
+  session,
+  allSongs,
+  onSave,
+  onClose,
 }: {
-  session: Session; allSongs: Song[]; onSave: (newIds: string[]) => void; onClose: () => void;
+  session: Session;
+  allSongs: Song[];
+  onSave: (newIds: string[]) => void;
+  onClose: () => void;
 }) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([...session.orderedSongIds]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([
+    ...session.orderedSongIds,
+  ]);
   const [search, setSearch] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      setSelectedIds((ids) => arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string)));
+      setSelectedIds((ids) =>
+        arrayMove(
+          ids,
+          ids.indexOf(active.id as string),
+          ids.indexOf(over.id as string),
+        ),
+      );
     }
   };
 
   const toggleSong = (id: string) => {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   };
 
   const available = allSongs.filter(
-    (s) => !selectedIds.includes(s.id) &&
-      (search === "" || s.title.toLowerCase().includes(search.toLowerCase()) || s.artist.toLowerCase().includes(search.toLowerCase()))
+    (s) =>
+      !selectedIds.includes(s.id) &&
+      (search === "" ||
+        s.title.toLowerCase().includes(search.toLowerCase()) ||
+        s.artist.toLowerCase().includes(search.toLowerCase())),
   );
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display italic">Edit Active Setlist</DialogTitle>
+          <DialogTitle className="font-display italic">
+            Edit Active Setlist
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label className="text-xs mb-2 block">Set Order ({selectedIds.length} songs) — drag to reorder</Label>
+            <Label className="text-xs mb-2 block">
+              Set Order ({selectedIds.length} songs) — drag to reorder
+            </Label>
             {selectedIds.length === 0 ? (
-              <div className="border border-dashed border-border rounded-xl p-6 text-center text-sm text-muted-foreground">Add songs below</div>
+              <div className="border border-dashed border-border rounded-xl p-6 text-center text-sm text-muted-foreground">
+                Add songs below
+              </div>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={selectedIds} strategy={verticalListSortingStrategy}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={selectedIds}
+                  strategy={verticalListSortingStrategy}
+                >
                   <div className="space-y-1.5">
                     {selectedIds.map((id) => {
                       const song = allSongs.find((s) => s.id === id);
                       if (!song) return null;
-                      return <EditDraggableSong key={id} id={id} song={song} onRemove={() => toggleSong(id)} />;
+                      return (
+                        <EditDraggableSong
+                          key={id}
+                          id={id}
+                          song={song}
+                          onRemove={() => toggleSong(id)}
+                        />
+                      );
                     })}
                   </div>
                 </SortableContext>
@@ -296,7 +440,12 @@ function EditSetlistModal({
             <Label className="text-xs mb-2 block">Add Songs</Label>
             <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search songs…" className="pl-8 h-8 text-sm" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search songs…"
+                className="pl-8 h-8 text-sm"
+              />
             </div>
             <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-xl p-2">
               {available.map((song) => (
@@ -307,14 +456,20 @@ function EditSetlistModal({
                 >
                   <Plus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <span className="text-sm flex-1">{song.title}</span>
-                  <span className="text-xs text-muted-foreground">{song.artist}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {song.artist}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button onClick={() => onSave(selectedIds)} className="flex-1">Update Set</Button>
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => onSave(selectedIds)} className="flex-1">
+              Update Set
+            </Button>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -322,23 +477,49 @@ function EditSetlistModal({
   );
 }
 
-function EditDraggableSong({ id, song, onRemove }: { id: string; song: Song; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+function EditDraggableSong({
+  id,
+  song,
+  onRemove,
+}: {
+  id: string;
+  song: Song;
+  onRemove: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 ${isDragging ? "opacity-50 shadow-lg" : ""}`}
     >
-      <span {...attributes} {...listeners} className="cursor-grab text-muted-foreground">
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab text-muted-foreground"
+      >
         <GripVertical className="w-4 h-4" />
       </span>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{song.title}</div>
         <div className="text-xs text-muted-foreground">{song.artist}</div>
       </div>
-      {song.capo && song.capo !== "No capo" && <Badge className="capo-badge text-xs shrink-0">{song.capo}</Badge>}
-      <Button variant="ghost" size="icon" className="w-6 h-6 shrink-0" onClick={onRemove}>
+      {song.capo && song.capo !== "No capo" && (
+        <Badge className="capo-badge text-xs shrink-0">{song.capo}</Badge>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="w-6 h-6 shrink-0"
+        onClick={onRemove}
+      >
         <X className="w-3.5 h-3.5" />
       </Button>
     </div>
@@ -348,30 +529,60 @@ function EditDraggableSong({ id, song, onRemove }: { id: string; song: Song; onR
 // ─── Sortable Stage Song Row ──────────────────────────────
 
 function StageSongRow({
-  song, status, isNext, onMarkPlayed, onMarkSkipped, onUndo, onAddNote,
-  onViewSheet, onViewCard, hasPdf,
-  songDuration, cumulativeTime, clockTime,
-  showDuration, showCumulative, showClock, focusMode = false,
+  song,
+  status,
+  isNext,
+  onMarkPlayed,
+  onMarkSkipped,
+  onUndo,
+  onAddNote,
+  onViewSheet,
+  onViewCard,
+  hasPdf,
+  songDuration,
+  cumulativeTime,
+  clockTime,
+  showDuration,
+  showCumulative,
+  showClock,
+  focusMode = false,
 }: {
-  song: Song; status: "pending" | "played" | "skipped"; isNext: boolean;
-  onMarkPlayed: () => void; onMarkSkipped: () => void; onUndo: () => void;
-  onAddNote: () => void; onViewSheet: () => void; onViewCard: () => void; hasPdf: boolean;
+  song: Song;
+  status: "pending" | "played" | "skipped";
+  isNext: boolean;
+  onMarkPlayed: () => void;
+  onMarkSkipped: () => void;
+  onUndo: () => void;
+  onAddNote: () => void;
+  onViewSheet: () => void;
+  onViewCard: () => void;
+  hasPdf: boolean;
   songDuration: number;
-  cumulativeTime: number;   // seconds from show start at which this song ends
-  clockTime: Date | null;   // wall-clock time this song starts (null if no start time)
+  cumulativeTime: number; // seconds from show start at which this song ends
+  clockTime: Date | null; // wall-clock time this song starts (null if no start time)
   showDuration: boolean;
   showCumulative: boolean;
   showClock: boolean;
   focusMode?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: song.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: song.id });
 
   const isDone = status !== "pending";
   const rowClass =
-    status === "played" ? "opacity-55 bg-card/70"
-    : status === "skipped" ? "opacity-45 bg-card/60"
-    : isNext ? "bg-primary/10 border-primary/50 shadow-sm shadow-primary/10"
-    : "bg-card";
+    status === "played"
+      ? "opacity-55 bg-card/70"
+      : status === "skipped"
+        ? "opacity-45 bg-card/60"
+        : isNext
+          ? "bg-primary/10 border-primary/50 shadow-sm shadow-primary/10"
+          : "bg-card";
 
   const clockLabel = clockTime
     ? clockTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
@@ -384,7 +595,12 @@ function StageSongRow({
       className={`stage-song-row group border rounded-2xl px-3 py-3 sm:px-3.5 sm:py-3 transition-all ${rowClass} ${isDragging ? "opacity-50 shadow-lg z-50" : ""}`}
     >
       <div className="flex items-start gap-3">
-        <span {...attributes} {...listeners} className="drag-handle cursor-grab text-muted-foreground shrink-0 pt-2 hidden sm:inline-flex" title="Drag to reorder">
+        <span
+          {...attributes}
+          {...listeners}
+          className="drag-handle cursor-grab text-muted-foreground shrink-0 pt-2 hidden sm:inline-flex"
+          title="Drag to reorder"
+        >
           <GripVertical className="w-4 h-4" />
         </span>
 
@@ -402,56 +618,129 @@ function StageSongRow({
         >
           <div className="flex flex-wrap items-center gap-2">
             {isNext && (
-              <Badge className="bg-primary text-primary-foreground text-[10px] px-2 py-0.5 uppercase tracking-wide">Next</Badge>
+              <Badge className="bg-primary text-primary-foreground text-[10px] px-2 py-0.5 uppercase tracking-wide">
+                Next
+              </Badge>
             )}
-            <span className={`font-display font-bold italic leading-tight ${isNext ? "text-lg sm:text-xl" : "text-base sm:text-[17px]"} ${status === "skipped" ? "line-through" : ""}`}>
+            <span
+              className={`font-display font-bold italic leading-tight ${isNext ? "text-lg sm:text-xl" : "text-base sm:text-[17px]"} ${status === "skipped" ? "line-through" : ""}`}
+            >
               {song.title}
             </span>
-            {song.capo && song.capo !== "No capo" && <Badge className="capo-badge text-[11px] shrink-0">{song.capo}</Badge>}
-            {hasPdf && <Badge variant="outline" className="text-[10px] gap-1"><FileText className="w-3 h-3" />PDF</Badge>}
+            {song.capo && song.capo !== "No capo" && (
+              <Badge className="capo-badge text-[11px] shrink-0">
+                {song.capo}
+              </Badge>
+            )}
+            {hasPdf && (
+              <Badge variant="outline" className="text-[10px] gap-1">
+                <FileText className="w-3 h-3" />
+                PDF
+              </Badge>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{song.artist}</span>
             <span>·</span>
-            <span className="font-semibold text-foreground/70">{song.key.split("(")[0].trim()}</span>
-            {!focusMode && showDuration && <span>· {formatDuration(songDuration)}</span>}
-            {!focusMode && showCumulative && <span>· total {formatDuration(cumulativeTime)}</span>}
-            {!focusMode && showClock && clockLabel && <span className="text-amber-600 dark:text-amber-400">· {clockLabel}</span>}
+            <span className="font-semibold text-foreground/70">
+              {song.key.split("(")[0].trim()}
+            </span>
+            {!focusMode && showDuration && (
+              <span>· {formatDuration(songDuration)}</span>
+            )}
+            {!focusMode && showCumulative && (
+              <span>· total {formatDuration(cumulativeTime)}</span>
+            )}
+            {!focusMode && showClock && clockLabel && (
+              <span className="text-amber-600 dark:text-amber-400">
+                · {clockLabel}
+              </span>
+            )}
           </div>
         </button>
 
         {!focusMode && (
           <div className="hidden md:grid grid-cols-3 gap-1 shrink-0 pt-1 min-w-[132px]">
-            {showDuration && <div className="text-right text-xs font-mono text-muted-foreground">{formatDuration(songDuration)}</div>}
-            {showCumulative && <div className="text-right text-xs font-mono text-primary/80">{formatDuration(cumulativeTime)}</div>}
-            {showClock && clockLabel && <div className="text-right text-xs font-mono text-amber-600 dark:text-amber-400">{clockLabel}</div>}
+            {showDuration && (
+              <div className="text-right text-xs font-mono text-muted-foreground">
+                {formatDuration(songDuration)}
+              </div>
+            )}
+            {showCumulative && (
+              <div className="text-right text-xs font-mono text-primary/80">
+                {formatDuration(cumulativeTime)}
+              </div>
+            )}
+            {showClock && clockLabel && (
+              <div className="text-right text-xs font-mono text-amber-600 dark:text-amber-400">
+                {clockLabel}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-7">
-        <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onViewCard} title="Song details">
-          <Info className="w-4 h-4" /> <span className="hidden sm:inline">Details</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 min-w-10 px-3 gap-1.5 text-xs"
+          onClick={onViewCard}
+          title="Song details"
+        >
+          <Info className="w-4 h-4" />{" "}
+          <span className="hidden sm:inline">Details</span>
         </Button>
-        <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onAddNote} title="Performance note">
-          <ClipboardList className="w-4 h-4" /> <span className="hidden sm:inline">Note</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 min-w-10 px-3 gap-1.5 text-xs"
+          onClick={onAddNote}
+          title="Performance note"
+        >
+          <ClipboardList className="w-4 h-4" />{" "}
+          <span className="hidden sm:inline">Note</span>
         </Button>
         {hasPdf && (
-          <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onViewSheet} title="Open PDF">
-            <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Sheet</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 min-w-10 px-3 gap-1.5 text-xs"
+            onClick={onViewSheet}
+            title="Open PDF"
+          >
+            <FileText className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">Sheet</span>
           </Button>
         )}
         <div className="flex-1" />
         {isDone ? (
-          <Button variant="outline" size="sm" className="h-10 px-3 gap-1.5 text-xs" onClick={onUndo} title="Undo">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 px-3 gap-1.5 text-xs"
+            onClick={onUndo}
+            title="Undo"
+          >
             <RotateCcw className="w-4 h-4" /> Undo
           </Button>
         ) : (
           <>
-            <Button variant="outline" size="sm" className="h-10 px-3 gap-1.5 text-xs text-muted-foreground" onClick={onMarkSkipped} title="Skip">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 px-3 gap-1.5 text-xs text-muted-foreground"
+              onClick={onMarkSkipped}
+              title="Skip"
+            >
               <SkipForward className="w-4 h-4" /> Skip
             </Button>
-            <Button size="sm" className="h-10 px-4 gap-1.5 text-xs font-semibold" onClick={onMarkPlayed} title="Mark played">
+            <Button
+              size="sm"
+              className="h-10 px-4 gap-1.5 text-xs font-semibold"
+              onClick={onMarkPlayed}
+              title="Mark played"
+            >
               <CheckCircle2 className="w-4 h-4" /> Done
             </Button>
           </>
@@ -463,21 +752,41 @@ function StageSongRow({
 
 // ─── Glance Mode ─────────────────────────────────────────
 
-function GlanceView({ next, upcoming }: { next: Song | null; upcoming: Song[] }) {
+function GlanceView({
+  next,
+  upcoming,
+}: {
+  next: Song | null;
+  upcoming: Song[];
+}) {
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center p-8 text-center">
       {next ? (
         <>
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Next Up</div>
-          <div className="font-display font-bold text-4xl italic mb-2">{next.title}</div>
-          <div className="text-muted-foreground text-lg mb-4">{next.artist}</div>
-          {next.capo && next.capo !== "No capo" && <Badge className="capo-badge text-base px-4 py-1 mb-4">{next.capo}</Badge>}
+          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+            Next Up
+          </div>
+          <div className="font-display font-bold text-4xl italic mb-2">
+            {next.title}
+          </div>
+          <div className="text-muted-foreground text-lg mb-4">
+            {next.artist}
+          </div>
+          {next.capo && next.capo !== "No capo" && (
+            <Badge className="capo-badge text-base px-4 py-1 mb-4">
+              {next.capo}
+            </Badge>
+          )}
           <div className="text-sm text-muted-foreground mb-8">{next.key}</div>
           {upcoming.slice(1, 4).length > 0 && (
             <div className="border-t border-border pt-6 w-full max-w-xs">
-              <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Coming Up</div>
+              <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+                Coming Up
+              </div>
               {upcoming.slice(1, 4).map((s, i) => (
-                <div key={s.id} className="text-sm py-1 text-muted-foreground">{i + 1}. {s.title}</div>
+                <div key={s.id} className="text-sm py-1 text-muted-foreground">
+                  {i + 1}. {s.title}
+                </div>
               ))}
             </div>
           )}
@@ -485,7 +794,9 @@ function GlanceView({ next, upcoming }: { next: Song | null; upcoming: Song[] })
       ) : (
         <div className="text-muted-foreground">
           <div className="text-4xl mb-4">🎉</div>
-          <div className="font-display font-bold text-2xl italic">All done!</div>
+          <div className="font-display font-bold text-2xl italic">
+            All done!
+          </div>
           <div className="text-sm mt-2">Great show!</div>
         </div>
       )}
@@ -498,11 +809,21 @@ function GlanceView({ next, upcoming }: { next: Song | null; upcoming: Song[] })
 const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
   approved: { label: "Approved", color: "text-green-600 dark:text-green-400" },
   denied: { label: "Declined", color: "text-red-500" },
-  alternative: { label: "Alternative", color: "text-amber-600 dark:text-amber-400" },
+  alternative: {
+    label: "Alternative",
+    color: "text-amber-600 dark:text-amber-400",
+  },
 };
 
 function RequestsPanel({
-  requests, songs, gigId, onApprove, onDeny, onSuggest, onClearAll, onClose,
+  requests,
+  songs,
+  gigId,
+  onApprove,
+  onDeny,
+  onSuggest,
+  onClearAll,
+  onClose,
 }: {
   requests: SbRequest[];
   gigId?: string | null;
@@ -535,7 +856,9 @@ function RequestsPanel({
 
   // Frequency summary from log
   const freqMap: Record<string, number> = {};
-  log.forEach((r) => { freqMap[r.song_title] = (freqMap[r.song_title] ?? 0) + 1; });
+  log.forEach((r) => {
+    freqMap[r.song_title] = (freqMap[r.song_title] ?? 0) + 1;
+  });
   const topRequests = Object.entries(freqMap)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 10);
@@ -546,9 +869,15 @@ function RequestsPanel({
         <DialogHeader className="shrink-0">
           <DialogTitle className="font-display italic flex items-center gap-2">
             <Bell className="w-4 h-4" /> Audience Requests
-            {gigId && <span className="text-[10px] text-muted-foreground font-normal">Scoped to active set</span>}
+            {gigId && (
+              <span className="text-[10px] text-muted-foreground font-normal">
+                Scoped to active set
+              </span>
+            )}
             {requests.length > 0 && (
-              <Badge className="bg-primary text-primary-foreground ml-1">{requests.length}</Badge>
+              <Badge className="bg-primary text-primary-foreground ml-1">
+                {requests.length}
+              </Badge>
             )}
           </DialogTitle>
         </DialogHeader>
@@ -577,39 +906,61 @@ function RequestsPanel({
                 <div className="text-center py-8 text-muted-foreground">
                   <Music2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No pending requests</p>
-                  <p className="text-xs mt-1 opacity-60">Updates every 30 seconds</p>
+                  <p className="text-xs mt-1 opacity-60">
+                    Updates every 30 seconds
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {requests.map((req) => {
                     const song = songs.find((s) => s.id === req.song_id);
                     return (
-                      <div key={req.id} className="flex items-center gap-3 bg-card border border-border rounded-xl px-3 py-2.5">
+                      <div
+                        key={req.id}
+                        className="flex items-center gap-3 bg-card border border-border rounded-xl px-3 py-2.5"
+                      >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-sm truncate">{req.song_title}</span>
+                            <span className="font-medium text-sm truncate">
+                              {req.song_title}
+                            </span>
                             {req.is_write_in && (
-                              <Badge variant="outline" className="text-[10px] shrink-0">write-in</Badge>
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] shrink-0"
+                              >
+                                write-in
+                              </Badge>
                             )}
                           </div>
-                          {song && <div className="text-xs text-muted-foreground">{song.artist} · {song.key?.split(" ")[0]}</div>}
+                          {song && (
+                            <div className="text-xs text-muted-foreground">
+                              {song.artist} · {song.key?.split(" ")[0]}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <Button size="icon" variant="ghost"
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="w-7 h-7 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
                             title="Approve — adds to setlist"
                             onClick={() => onApprove(req)}
                           >
                             <ThumbsUp className="w-3.5 h-3.5" />
                           </Button>
-                          <Button size="icon" variant="ghost"
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="w-7 h-7 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                             title="Suggest alternative"
                             onClick={() => onSuggest(req)}
                           >
                             <Shuffle className="w-3.5 h-3.5" />
                           </Button>
-                          <Button size="icon" variant="ghost"
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="w-7 h-7 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                             title="Decline"
                             onClick={() => onDeny(req)}
@@ -620,7 +971,9 @@ function RequestsPanel({
                       </div>
                     );
                   })}
-                  <Button variant="ghost" size="sm"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="w-full text-xs text-muted-foreground mt-1"
                     onClick={onClearAll}
                   >
@@ -636,7 +989,9 @@ function RequestsPanel({
               {/* Top requested songs */}
               {topRequests.length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Most Requested</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Most Requested
+                  </div>
                   <div className="space-y-1.5">
                     {topRequests.map(([title, count]) => (
                       <div key={title} className="flex items-center gap-2">
@@ -644,9 +999,13 @@ function RequestsPanel({
                         <div className="flex items-center gap-1">
                           <div
                             className="h-2 bg-primary/60 rounded-full"
-                            style={{ width: `${Math.max(20, (count / (topRequests[0][1] || 1)) * 80)}px` }}
+                            style={{
+                              width: `${Math.max(20, (count / (topRequests[0][1] || 1)) * 80)}px`,
+                            }}
                           />
-                          <span className="text-xs font-semibold text-muted-foreground w-5 text-right">{count}</span>
+                          <span className="text-xs font-semibold text-muted-foreground w-5 text-right">
+                            {count}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -656,26 +1015,44 @@ function RequestsPanel({
 
               {/* Full log */}
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Full Log</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Full Log
+                </div>
                 {logLoading ? (
-                  <div className="text-center py-6 text-muted-foreground text-sm">Loading…</div>
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    Loading…
+                  </div>
                 ) : log.length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground text-sm">No history yet</div>
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    No history yet
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     {log.map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0">
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-0"
+                      >
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm truncate block">{entry.song_title}</span>
+                          <span className="text-sm truncate block">
+                            {entry.song_title}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            {new Date(entry.requested_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {new Date(entry.requested_at).toLocaleDateString(
+                              "en-US",
+                              { month: "short", day: "numeric" },
+                            )}
                             {entry.is_write_in && " · write-in"}
                           </span>
                         </div>
-                        <span className={`text-xs font-medium shrink-0 ${
-                          OUTCOME_LABELS[entry.outcome]?.color ?? "text-muted-foreground"
-                        }`}>
-                          {OUTCOME_LABELS[entry.outcome]?.label ?? entry.outcome}
+                        <span
+                          className={`text-xs font-medium shrink-0 ${
+                            OUTCOME_LABELS[entry.outcome]?.color ??
+                            "text-muted-foreground"
+                          }`}
+                        >
+                          {OUTCOME_LABELS[entry.outcome]?.label ??
+                            entry.outcome}
                         </span>
                       </div>
                     ))}
@@ -707,13 +1084,17 @@ export default function StagePage() {
   const [showRequests, setShowRequests] = useState(false);
   const [requests, setRequests] = useState<SbRequest[]>([]);
   const [perfNotes, setPerfNotes] = useState<PerformanceNote[]>([]);
-  const [pdfMap, setPdfMap] = useState<Record<string, { url: string; name: string }>>({});
+  const [pdfMap, setPdfMap] = useState<
+    Record<string, { url: string; name: string }>
+  >({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Timing state ─────────────────────────────────────────
   const [stageStartTime, setStageStartTime] = useState<string>(""); // "HH:MM" 24h
   const [showStartTimeEdit, setShowStartTimeEdit] = useState(false);
-  const [colPrefs, setColPrefs] = useState<StageTimingPrefs>(() => stageTimingStore.getPrefs());
+  const [colPrefs, setColPrefs] = useState<StageTimingPrefs>(() =>
+    stageTimingStore.getPrefs(),
+  );
 
   const toggleCol = (col: keyof StageTimingPrefs) => {
     setColPrefs((prev) => {
@@ -728,25 +1109,31 @@ export default function StagePage() {
 
   // Load synced song catalogue, including user-added songs and seed-song edits.
   useEffect(() => {
-    sbSongs.getCatalog().then(setSongs).catch(() => {});
+    sbSongs
+      .getCatalog()
+      .then(setSongs)
+      .catch(() => {});
   }, []);
 
   // Load session from Supabase on mount
   useEffect(() => {
-    sbSession.get().then((s) => {
-      if (s) {
-        setSessionState({
-          setlistId: s.setlist_id,
-          orderedSongIds: s.ordered_song_ids,
-          playedIds: s.played_ids,
-          skippedIds: s.skipped_ids,
-        });
-        // Load the planned start time for this setlist
-        const savedTime = stageTimingStore.getStartTime(s.setlist_id);
-        if (savedTime) setStageStartTime(savedTime);
-      }
-      setSessionLoading(false);
-    }).catch(() => setSessionLoading(false));
+    sbSession
+      .get()
+      .then((s) => {
+        if (s) {
+          setSessionState({
+            setlistId: s.setlist_id,
+            orderedSongIds: s.ordered_song_ids,
+            playedIds: s.played_ids,
+            skippedIds: s.skipped_ids,
+          });
+          // Load the planned start time for this setlist
+          const savedTime = stageTimingStore.getStartTime(s.setlist_id);
+          if (savedTime) setStageStartTime(savedTime);
+        }
+        setSessionLoading(false);
+      })
+      .catch(() => setSessionLoading(false));
   }, []);
 
   // Resolve the public request scope for the active set. New audience links
@@ -758,13 +1145,20 @@ export default function StagePage() {
     }
     sbSetlists
       .getById(session.setlistId)
-      .then((setlist) => setRequestScopeId(setlist ? requestScopeForSetlist(setlist) : session.setlistId))
+      .then((setlist) =>
+        setRequestScopeId(
+          setlist ? requestScopeForSetlist(setlist) : session.setlistId,
+        ),
+      )
       .catch(() => setRequestScopeId(session.setlistId));
   }, [session?.setlistId]);
 
   // Load PDF map so we know which songs have sheet music
   useEffect(() => {
-    sbSongPdfs.getAll().then(setPdfMap).catch(() => {});
+    sbSongPdfs
+      .getAll()
+      .then(setPdfMap)
+      .catch(() => {});
   }, []);
 
   // Load synced performance notes for the active setlist
@@ -784,11 +1178,16 @@ export default function StagePage() {
   useEffect(() => {
     const activeGigId = requestScopeId ?? session?.setlistId ?? null;
     const fetchRequests = () => {
-      sbRequests.getPending(activeGigId).then(setRequests).catch(() => {});
+      sbRequests
+        .getPending(activeGigId)
+        .then(setRequests)
+        .catch(() => {});
     };
     fetchRequests();
     pollRef.current = setInterval(fetchRequests, 30000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [session?.setlistId, requestScopeId]);
 
   const handleApprove = async (req: SbRequest) => {
@@ -803,23 +1202,36 @@ export default function StagePage() {
         sbSetlists.update(session.setlistId, { song_ids: newIds }).catch(() => {
           toast({
             title: "Active set updated only",
-            description: "The request was added tonight, but the saved setlist did not sync.",
+            description:
+              "The request was added tonight, but the saved setlist did not sync.",
             variant: "destructive",
           });
         });
-        toast({ title: "Added to setlist!", description: `“${req.song_title}” added to the end of the set` });
+        toast({
+          title: "Added to setlist!",
+          description: `“${req.song_title}” added to the end of the set`,
+        });
       } else {
-        toast({ title: "Approved", description: `“${req.song_title}” is already in the set` });
+        toast({
+          title: "Approved",
+          description: `“${req.song_title}” is already in the set`,
+        });
       }
     } else if (req.is_write_in) {
-      toast({ title: "Approved (write-in)", description: `“${req.song_title}” noted — not in catalogue` });
+      toast({
+        title: "Approved (write-in)",
+        description: `“${req.song_title}” noted — not in catalogue`,
+      });
     }
   };
 
   const handleDeny = async (req: SbRequest) => {
     await sbRequests.resolve(req, "denied");
     setRequests((prev) => prev.filter((r) => r.id !== req.id));
-    toast({ title: "Declined", description: `“${req.song_title}” removed from queue` });
+    toast({
+      title: "Declined",
+      description: `“${req.song_title}” removed from queue`,
+    });
   };
 
   const handleSuggestAlternative = async (req: SbRequest) => {
@@ -827,20 +1239,30 @@ export default function StagePage() {
     setRequests((prev) => prev.filter((r) => r.id !== req.id));
     const reqSong = songs.find((s) => s.id === req.song_id);
     const alternatives = songs.filter(
-      (s) => s.id !== req.song_id &&
-        (s.genre === reqSong?.genre || (reqSong?.similar ?? []).includes(s.title))
+      (s) =>
+        s.id !== req.song_id &&
+        (s.genre === reqSong?.genre ||
+          (reqSong?.similar ?? []).includes(s.title)),
     );
     if (alternatives.length > 0) {
       const alt = alternatives[Math.floor(Math.random() * alternatives.length)];
-      toast({ title: "Suggested alternative", description: `How about “${alt.title}” by ${alt.artist}?` });
+      toast({
+        title: "Suggested alternative",
+        description: `How about “${alt.title}” by ${alt.artist}?`,
+      });
     } else {
-      toast({ title: "No similar songs found", description: "Consider picking one manually from the setlist" });
+      toast({
+        title: "No similar songs found",
+        description: "Consider picking one manually from the setlist",
+      });
     }
   };
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const setlist = null; // setlist details not needed here — session carries song IDs
@@ -856,8 +1278,12 @@ export default function StagePage() {
   const playedIds = session?.playedIds ?? [];
   const skippedIds = session?.skippedIds ?? [];
 
-  const orderedSongs = orderedIds.map((id) => songs.find((s) => s.id === id)).filter(Boolean) as Song[];
-  const pendingSongs = orderedSongs.filter((s) => !playedIds.includes(s.id) && !skippedIds.includes(s.id));
+  const orderedSongs = orderedIds
+    .map((id) => songs.find((s) => s.id === id))
+    .filter(Boolean) as Song[];
+  const pendingSongs = orderedSongs.filter(
+    (s) => !playedIds.includes(s.id) && !skippedIds.includes(s.id),
+  );
   const nextSong = pendingSongs[0] ?? null;
 
   const getStatus = (song: Song): "played" | "skipped" | "pending" => {
@@ -866,21 +1292,60 @@ export default function StagePage() {
     return "pending";
   };
 
-  const markPlayed = (id: string) => updateSession({ playedIds: [...playedIds, id], skippedIds: skippedIds.filter((x) => x !== id) });
-  const markSkipped = (id: string) => updateSession({ skippedIds: [...skippedIds, id], playedIds: playedIds.filter((x) => x !== id) });
-  const undo = (id: string) => updateSession({ playedIds: playedIds.filter((x) => x !== id), skippedIds: skippedIds.filter((x) => x !== id) });
+  const markPlayed = (id: string) =>
+    updateSession({
+      playedIds: [...playedIds, id],
+      skippedIds: skippedIds.filter((x) => x !== id),
+    });
+  const markSkipped = (id: string) =>
+    updateSession({
+      skippedIds: [...skippedIds, id],
+      playedIds: playedIds.filter((x) => x !== id),
+    });
+  const undo = (id: string) =>
+    updateSession({
+      playedIds: playedIds.filter((x) => x !== id),
+      skippedIds: skippedIds.filter((x) => x !== id),
+    });
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      updateSession({ orderedSongIds: arrayMove(orderedIds, orderedIds.indexOf(active.id as string), orderedIds.indexOf(over.id as string)) });
+      updateSession({
+        orderedSongIds: arrayMove(
+          orderedIds,
+          orderedIds.indexOf(active.id as string),
+          orderedIds.indexOf(over.id as string),
+        ),
+      });
     }
+  };
+
+  const resetProgress = async () => {
+    if (playedIds.length === 0 && skippedIds.length === 0) {
+      toast({ title: "No completed songs to reset" });
+      return;
+    }
+    const confirmed = await confirm({
+      title: "Reset completed songs?",
+      description:
+        "This marks every song in the active Stage session as pending again. Your saved setlist order will not change.",
+      confirmLabel: "Reset progress",
+      destructive: false,
+    });
+    if (!confirmed) return;
+    updateSession({ playedIds: [], skippedIds: [] });
+    toast({
+      title: "Stage progress reset",
+      description: "All songs are pending again.",
+    });
   };
 
   const clearSession = async () => {
     const confirmed = await confirm({
       title: "End active set?",
-      description: "This clears the currently loaded Stage session. Your saved setlist will remain available.",
+      description:
+        "This clears the currently loaded Stage session. Your saved setlist will remain available.",
       confirmLabel: "End set",
       destructive: true,
     });
@@ -907,7 +1372,8 @@ export default function StagePage() {
       } catch (err: any) {
         toast({
           title: "Active set updated only",
-          description: err?.message ?? "The saved cloud setlist did not update.",
+          description:
+            err?.message ?? "The saved cloud setlist did not update.",
           variant: "destructive",
         });
       }
@@ -928,8 +1394,13 @@ export default function StagePage() {
     return (
       <div className="text-center py-20 text-muted-foreground">
         <div className="text-5xl mb-4">🎤</div>
-        <div className="font-display font-bold text-xl italic mb-2">No Active Set</div>
-        <p className="text-sm max-w-sm mx-auto mb-6">Go to Setlists, pick a gig, and hit "Load Tonight" to start the stage manager.</p>
+        <div className="font-display font-bold text-xl italic mb-2">
+          No Active Set
+        </div>
+        <p className="text-sm max-w-sm mx-auto mb-6">
+          Go to Setlists, pick a gig, and hit "Load Tonight" to start the stage
+          manager.
+        </p>
       </div>
     );
   }
@@ -940,8 +1411,10 @@ export default function StagePage() {
   const timePlayed = orderedSongs
     .filter((s) => playedIds.includes(s.id))
     .reduce((sum, s) => sum + (s.duration ?? DEFAULT_DUR), 0);
-  const timeRemaining = pendingSongs
-    .reduce((sum, s) => sum + (s.duration ?? DEFAULT_DUR), 0);
+  const timeRemaining = pendingSongs.reduce(
+    (sum, s) => sum + (s.duration ?? DEFAULT_DUR),
+    0,
+  );
 
   // Parse stageStartTime ("HH:MM") into a Date for today
   const startDate: Date | null = (() => {
@@ -969,8 +1442,15 @@ export default function StagePage() {
     const dur = song.duration ?? DEFAULT_DUR;
     const startSec = elapsed;
     const endSec = elapsed + dur;
-    const clock = startDate ? new Date(startDate.getTime() + startSec * 1000) : null;
-    songTimings.push({ songId: song.id, songDuration: dur, cumulativeTime: endSec, clockTime: clock });
+    const clock = startDate
+      ? new Date(startDate.getTime() + startSec * 1000)
+      : null;
+    songTimings.push({
+      songId: song.id,
+      songDuration: dur,
+      cumulativeTime: endSec,
+      clockTime: clock,
+    });
     elapsed = endSec + BETWEEN_GAP;
   });
 
@@ -981,9 +1461,12 @@ export default function StagePage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="font-display font-bold text-xl italic mb-0.5">Stage Manager</h1>
+          <h1 className="font-display font-bold text-xl italic mb-0.5">
+            Stage Manager
+          </h1>
           <p className="text-muted-foreground text-sm">
-            {playedIds.length} played · {pendingSongs.length} remaining · {skippedIds.length} skipped
+            {playedIds.length} played · {pendingSongs.length} remaining ·{" "}
+            {skippedIds.length} skipped
           </p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
             {timePlayed > 0 && (
@@ -1007,7 +1490,8 @@ export default function StagePage() {
                     onChange={(e) => {
                       const v = e.target.value;
                       setStageStartTime(v);
-                      if (session) stageTimingStore.setStartTime(session.setlistId, v);
+                      if (session)
+                        stageTimingStore.setStartTime(session.setlistId, v);
                     }}
                     className="text-xs bg-background border border-border rounded px-1.5 py-0.5 font-mono w-24"
                     autoFocus
@@ -1021,11 +1505,15 @@ export default function StagePage() {
                   title="Set / adjust show start time"
                 >
                   <Clock className="w-3 h-3" />
-                  {stageStartTime ? (() => {
-                    const [h, m] = stageStartTime.split(":").map(Number);
-                    const ap = h >= 12 ? "PM" : "AM";
-                    return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
-                  })() : <span className="opacity-60 italic">Set start time</span>}
+                  {stageStartTime ? (
+                    (() => {
+                      const [h, m] = stageStartTime.split(":").map(Number);
+                      const ap = h >= 12 ? "PM" : "AM";
+                      return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
+                    })()
+                  ) : (
+                    <span className="opacity-60 italic">Set start time</span>
+                  )}
                 </button>
               )}
             </div>
@@ -1033,8 +1521,11 @@ export default function StagePage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline" size="sm"
-            onClick={() => { setShowRequests((p) => !p); }}
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setShowRequests((p) => !p);
+            }}
             className="gap-1.5 relative"
           >
             <Bell className="w-3.5 h-3.5" /> Requests
@@ -1044,7 +1535,12 @@ export default function StagePage() {
               </span>
             )}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowEditSetlist(true)} className="gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowEditSetlist(true)}
+            className="gap-1.5"
+          >
             <Pencil className="w-3.5 h-3.5" /> Edit Set
           </Button>
           <Button
@@ -1056,10 +1552,31 @@ export default function StagePage() {
           >
             <Music2 className="w-3.5 h-3.5" /> Focus
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setGlanceMode(true)} className="gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setGlanceMode(true)}
+            className="gap-1.5"
+          >
             <Maximize2 className="w-3.5 h-3.5" /> At-a-Glance
           </Button>
-          <Button variant="ghost" size="sm" onClick={clearSession} className="text-muted-foreground gap-1.5">
+          {(playedIds.length > 0 || skippedIds.length > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetProgress}
+              className="gap-1.5"
+              title="Mark completed/skipped songs as pending again"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearSession}
+            className="text-muted-foreground gap-1.5"
+          >
             <X className="w-3.5 h-3.5" /> End Set
           </Button>
         </div>
@@ -1070,26 +1587,52 @@ export default function StagePage() {
         <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent border border-primary/35 rounded-2xl p-4 sm:p-5 mb-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mb-1">Next Up</div>
-              <div className="font-display font-bold text-2xl sm:text-3xl italic leading-tight">{nextSong.title}</div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mb-1">
+                Next Up
+              </div>
+              <div className="font-display font-bold text-2xl sm:text-3xl italic leading-tight">
+                {nextSong.title}
+              </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                 <span>{nextSong.artist}</span>
                 <span>·</span>
-                <span className="font-semibold text-foreground/75">{nextSong.key.split("(")[0].trim()}</span>
-                {nextSong.duration && <span>· {formatDurationLong(nextSong.duration)}</span>}
+                <span className="font-semibold text-foreground/75">
+                  {nextSong.key.split("(")[0].trim()}
+                </span>
+                {nextSong.duration && (
+                  <span>· {formatDurationLong(nextSong.duration)}</span>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              {nextSong.capo && nextSong.capo !== "No capo" && <Badge className="capo-badge text-sm px-3 py-1">{nextSong.capo}</Badge>}
+              {nextSong.capo && nextSong.capo !== "No capo" && (
+                <Badge className="capo-badge text-sm px-3 py-1">
+                  {nextSong.capo}
+                </Badge>
+              )}
               {!!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl) && (
-                <Button size="lg" variant="outline" onClick={() => setFullscreenPdfSong(nextSong)} className="h-11 gap-1.5">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setFullscreenPdfSong(nextSong)}
+                  className="h-11 gap-1.5"
+                >
                   <FileText className="w-4 h-4" /> Sheet
                 </Button>
               )}
-              <Button size="lg" variant="outline" onClick={() => markSkipped(nextSong.id)} className="h-11 gap-1.5">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => markSkipped(nextSong.id)}
+                className="h-11 gap-1.5"
+              >
                 <SkipForward className="w-4 h-4" /> Skip
               </Button>
-              <Button size="lg" onClick={() => markPlayed(nextSong.id)} className="h-11 gap-1.5 font-semibold">
+              <Button
+                size="lg"
+                onClick={() => markPlayed(nextSong.id)}
+                className="h-11 gap-1.5 font-semibold"
+              >
                 <CheckCircle2 className="w-4 h-4" /> Done
               </Button>
             </div>
@@ -1098,58 +1641,86 @@ export default function StagePage() {
       )}
 
       {/* Column visibility toggles + column headers */}
-      {!focusMode && <div className="mb-2 space-y-1.5">
-        {/* Toggle pill row */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">Columns:</span>
-          {([
-            { key: "showDuration" as keyof StageTimingPrefs, label: "Dur" },
-            { key: "showCumulative" as keyof StageTimingPrefs, label: "Total" },
-            { key: "showClock" as keyof StageTimingPrefs, label: "Clock" },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => toggleCol(key)}
-              className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
-                colPrefs[key]
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Column header labels aligned with song rows */}
-        {(colPrefs.showDuration || colPrefs.showCumulative || colPrefs.showClock) && (
-          <div className="flex items-center gap-2 px-3 py-0">
-            {/* spacers for: drag handle, (optional pulse dot), title area flex-1 */}
-            <span className="w-4 shrink-0" />{/* drag handle */}
-            <span className="flex-1" />{/* title area */}
-            {colPrefs.showDuration && (
-              <span className="shrink-0 w-12 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">Dur</span>
-            )}
-            {colPrefs.showCumulative && (
-              <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">Total</span>
-            )}
-            {colPrefs.showClock && (
-              <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">Clock</span>
-            )}
-            <span className="w-[108px] shrink-0" />{/* action buttons placeholder */}
+      {!focusMode && (
+        <div className="mb-2 space-y-1.5">
+          {/* Toggle pill row */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
+              Columns:
+            </span>
+            {(
+              [
+                { key: "showDuration" as keyof StageTimingPrefs, label: "Dur" },
+                {
+                  key: "showCumulative" as keyof StageTimingPrefs,
+                  label: "Total",
+                },
+                { key: "showClock" as keyof StageTimingPrefs, label: "Clock" },
+              ] as const
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => toggleCol(key)}
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                  colPrefs[key]
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        )}
-      </div>}
+
+          {/* Column header labels aligned with song rows */}
+          {(colPrefs.showDuration ||
+            colPrefs.showCumulative ||
+            colPrefs.showClock) && (
+            <div className="flex items-center gap-2 px-3 py-0">
+              {/* spacers for: drag handle, (optional pulse dot), title area flex-1 */}
+              <span className="w-4 shrink-0" />
+              {/* drag handle */}
+              <span className="flex-1" />
+              {/* title area */}
+              {colPrefs.showDuration && (
+                <span className="shrink-0 w-12 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                  Dur
+                </span>
+              )}
+              {colPrefs.showCumulative && (
+                <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                  Total
+                </span>
+              )}
+              {colPrefs.showClock && (
+                <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                  Clock
+                </span>
+              )}
+              <span className="w-[108px] shrink-0" />
+              {/* action buttons placeholder */}
+            </div>
+          )}
+        </div>
+      )}
 
       {focusMode && (
         <div className="mb-3 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-muted-foreground">
-          Focus mode is on: rows are larger and timing columns are tucked into each song.
+          Focus mode is on: rows are larger and timing columns are tucked into
+          each song.
         </div>
       )}
 
       {/* Full set list */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={orderedIds}
+          strategy={verticalListSortingStrategy}
+        >
           <div className="space-y-1.5">
             {orderedSongs.map((song) => {
               const timing = songTimings.find((t) => t.songId === song.id);
@@ -1221,7 +1792,9 @@ export default function StagePage() {
           onSaved={(saved) => {
             setPerfNotes((prev) => {
               const exists = prev.some((n) => n.id === saved.id);
-              return exists ? prev.map((n) => (n.id === saved.id ? saved : n)) : [saved, ...prev];
+              return exists
+                ? prev.map((n) => (n.id === saved.id ? saved : n))
+                : [saved, ...prev];
             });
           }}
           onClose={() => setNoteModalSong(null)}
@@ -1229,23 +1802,28 @@ export default function StagePage() {
       )}
 
       {/* Sheet music — goes FULLSCREEN directly for performance use */}
-      {fullscreenPdfSong && (() => {
-        const url = pdfMap[fullscreenPdfSong.id]?.url ?? fullscreenPdfSong.pdfUrl;
-        return url ? (
-          <Suspense fallback={null}>
-            <FullscreenPdfViewer
-              pdfUrl={url}
-              songTitle={fullscreenPdfSong.title}
-              onClose={() => setFullscreenPdfSong(null)}
-            />
-          </Suspense>
-        ) : null;
-      })()}
+      {fullscreenPdfSong &&
+        (() => {
+          const url =
+            pdfMap[fullscreenPdfSong.id]?.url ?? fullscreenPdfSong.pdfUrl;
+          return url ? (
+            <Suspense fallback={null}>
+              <FullscreenPdfViewer
+                pdfUrl={url}
+                songTitle={fullscreenPdfSong.title}
+                onClose={() => setFullscreenPdfSong(null)}
+              />
+            </Suspense>
+          ) : null;
+        })()}
 
       {/* Sheet music modal fallback (no pdf uploaded) — opens info tab */}
       {sheetSong && (
         <SongDetailModal
-          song={{ ...sheetSong, pdfUrl: pdfMap[sheetSong.id]?.url ?? sheetSong.pdfUrl }}
+          song={{
+            ...sheetSong,
+            pdfUrl: pdfMap[sheetSong.id]?.url ?? sheetSong.pdfUrl,
+          }}
           onClose={() => setSheetSong(null)}
           defaultTab="pdf"
         />
@@ -1254,7 +1832,10 @@ export default function StagePage() {
       {/* Song card modal (info icon) */}
       {cardSong && (
         <SongDetailModal
-          song={{ ...cardSong, pdfUrl: pdfMap[cardSong.id]?.url ?? cardSong.pdfUrl }}
+          song={{
+            ...cardSong,
+            pdfUrl: pdfMap[cardSong.id]?.url ?? cardSong.pdfUrl,
+          }}
           onClose={() => setCardSong(null)}
         />
       )}
@@ -1271,19 +1852,23 @@ export default function StagePage() {
           onClearAll={async () => {
             const confirmed = await confirm({
               title: "Clear all pending requests?",
-              description: "This removes every pending audience request from the queue.",
+              description:
+                "This removes every pending audience request from the queue.",
               confirmLabel: "Clear requests",
               destructive: true,
             });
             if (!confirmed) return;
             try {
-              await sbRequests.clearAll(requestScopeId ?? session?.setlistId ?? null);
+              await sbRequests.clearAll(
+                requestScopeId ?? session?.setlistId ?? null,
+              );
               setRequests([]);
               toast({ title: "Requests cleared" });
             } catch (err: any) {
               toast({
                 title: "Could not clear requests",
-                description: err?.message ?? "The request queue was not cleared.",
+                description:
+                  err?.message ?? "The request queue was not cleared.",
                 variant: "destructive",
               });
             }
