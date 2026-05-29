@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { QRCodeSVG as QRCode } from "qrcode.react";
-import { songsStore, type Song } from "@/lib/data";
-import { sbRequests, sbSession } from "@/lib/supabase";
+import { SEED_SONGS, type Song } from "@/lib/data";
+import { sbRequests, sbSession, sbSongs } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -215,7 +215,7 @@ function buildAudienceUrl(gigId: string): string {
 // ─── Main Page ────────────────────────────────────────────
 
 export default function AudiencePage() {
-  const songs = useMemo(() => songsStore.getAll(), []);
+  const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [location] = useLocation();
   const routeGigId = useMemo(() => {
     const match = location.match(/^\/audience\/([^/?#]+)/);
@@ -233,6 +233,10 @@ export default function AudiencePage() {
   const [writeIn, setWriteIn] = useState("");
   const [writeInSubmitting, setWriteInSubmitting] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    sbSongs.getCatalog().then(setSongs).catch(() => {});
+  }, []);
 
   // If someone opens the generic #/audience route, automatically bind it to
   // the currently loaded Stage set. Explicit #/audience/:gigId links stay fixed.

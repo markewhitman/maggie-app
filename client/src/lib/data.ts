@@ -126,8 +126,6 @@ const KEYS = {
   setlists: "maggie_setlists_v2",
   venues: "maggie_venues_v2",
   perfNotes: "maggie_perf_notes_v2",
-  githubPat: "maggie_github_pat",
-  githubRepo: "maggie_github_repo",
 } as const;
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -350,29 +348,5 @@ export const perfNotesStore = {
 
   delete(id: string): void {
     save(KEYS.perfNotes, this.getAll().filter((n) => n.id !== id));
-  },
-};
-
-// ─── GitHub Settings ──────────────────────────────────────
-
-// NOTE: PAT is kept in memory only (React state in Settings page).
-// We do NOT persist to localStorage to avoid security risk.
-// Repo config IS persisted.
-
-export interface GithubConfig {
-  owner: string;
-  repo: string;
-  releaseTag: string;
-}
-
-export const githubConfigStore = {
-  get(): GithubConfig | null {
-    return load<GithubConfig | null>(KEYS.githubRepo, null);
-  },
-  save(config: GithubConfig): void {
-    save(KEYS.githubRepo, config);
-  },
-  clear(): void {
-    localStorage.removeItem(KEYS.githubRepo);
   },
 };

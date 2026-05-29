@@ -6,8 +6,8 @@ import {
   SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { songsStore, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
-import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, type SbRequest, type SbPerfNote } from "@/lib/supabase";
+import { SEED_SONGS, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
+import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, sbSongs, type SbRequest, type SbPerfNote } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { FullscreenPdfViewer } from "@/components/FullscreenPdfViewer";
 import { Button } from "@/components/ui/button";
@@ -677,7 +677,7 @@ function RequestsPanel({
 // ─── Main Page ────────────────────────────────────────────
 
 export default function StagePage() {
-  const songs = songsStore.getAll();
+  const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [session, setSessionState] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
@@ -707,6 +707,11 @@ export default function StagePage() {
 
   const { toast } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+
+  // Load synced song catalogue, including user-added songs and seed-song edits.
+  useEffect(() => {
+    sbSongs.getCatalog().then(setSongs).catch(() => {});
+  }, []);
 
   // Load session from Supabase on mount
   useEffect(() => {

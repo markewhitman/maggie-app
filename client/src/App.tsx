@@ -4,7 +4,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { GithubProvider } from "@/lib/GithubContext";
 import Layout from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import SetlistPage from "@/pages/SetlistPage";
@@ -51,10 +50,8 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <GithubProvider>
-          <AppRoutes />
-          <Toaster />
-        </GithubProvider>
+        <AppRoutes />
+        <Toaster />
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -4,6 +4,7 @@
 // ============================================================
 
 import { createClient } from "@supabase/supabase-js";
+import { SEED_SONGS, songsStore, type Song } from "./data";
 
 const SUPABASE_URL = "https://bephofcynjspsulmuikh.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -77,6 +78,236 @@ export interface SbActiveSession {
   skipped_ids: string[];
   updated_at: string;
 }
+
+export interface SbSong {
+  id: string;
+  user_id: string;
+  title: string;
+  artist: string;
+  year: number;
+  song_key: string;
+  capo: string;
+  chords: string;
+  strumming: string;
+  guitar_type: string;
+  tempo: number;
+  tempo_feel: string;
+  mood: string;
+  mood2: string | null;
+  genre: string;
+  genre2: string | null;
+  decade: string | null;
+  energy: string | null;
+  vocal_style: string | null;
+  similar: string[] | null;
+  difficulty: string;
+  tags: string[];
+  performance_note: string;
+  ultimate_guitar_url: string;
+  set_position: number;
+  duration: number | null;
+  pdf_url: string | null;
+  pdf_asset_id: number | null;
+  pdf_filename: string | null;
+  user_added: boolean;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+const LOCAL_SONG_MIGRATION_KEY = "maggie_songs_migrated_to_supabase_v1";
+
+function songToSbSong(song: Song, userId = getDeviceId(), isDeleted = false): SbSong {
+  return {
+    id: song.id,
+    user_id: userId,
+    title: song.title,
+    artist: song.artist,
+    year: Number(song.year) || new Date().getFullYear(),
+    song_key: song.key ?? "",
+    capo: song.capo ?? "No capo",
+    chords: song.chords ?? "",
+    strumming: song.strumming ?? "",
+    guitar_type: song.guitarType ?? "acoustic",
+    tempo: Number(song.tempo) || 120,
+    tempo_feel: song.tempoFeel ?? "Mid-Tempo",
+    mood: song.mood ?? "",
+    mood2: song.mood2 ?? null,
+    genre: song.genre ?? "",
+    genre2: song.genre2 ?? null,
+    decade: song.decade ?? null,
+    energy: song.energy ?? null,
+    vocal_style: song.vocalStyle ?? null,
+    similar: song.similar ?? null,
+    difficulty: song.difficulty ?? "Intermediate",
+    tags: Array.isArray(song.tags) ? song.tags : [],
+    performance_note: song.performanceNote ?? "",
+    ultimate_guitar_url: song.ultimateGuitarUrl ?? "",
+    set_position: Number(song.setPosition) || 99,
+    duration: song.duration ?? null,
+    pdf_url: song.pdfUrl ?? null,
+    pdf_asset_id: song.pdfAssetId ?? null,
+    pdf_filename: song.pdfFilename ?? null,
+    user_added: song.userAdded ?? !SEED_SONGS.some((s) => s.id === song.id),
+    is_deleted: isDeleted,
+  };
+}
+
+function sbSongToSong(row: SbSong): Song {
+  return {
+    id: row.id,
+    title: row.title,
+    artist: row.artist,
+    year: row.year,
+    key: row.song_key,
+    capo: row.capo,
+    chords: row.chords,
+    strumming: row.strumming,
+    guitarType: (row.guitar_type as Song["guitarType"]) || "acoustic",
+    tempo: row.tempo,
+    tempoFeel: row.tempo_feel,
+    mood: row.mood,
+    mood2: row.mood2 ?? undefined,
+    genre: row.genre,
+    genre2: row.genre2 ?? undefined,
+    decade: row.decade ?? undefined,
+    energy: (row.energy as Song["energy"]) ?? undefined,
+    vocalStyle: (row.vocal_style as Song["vocalStyle"]) ?? undefined,
+    similar: row.similar ?? undefined,
+    difficulty: (row.difficulty as Song["difficulty"]) || "Intermediate",
+    tags: row.tags ?? [],
+    performanceNote: row.performance_note ?? "",
+    ultimateGuitarUrl: row.ultimate_guitar_url ?? "",
+    setPosition: row.set_position ?? 99,
+    duration: row.duration ?? undefined,
+    pdfUrl: row.pdf_url ?? undefined,
+    pdfAssetId: row.pdf_asset_id ?? undefined,
+    pdfFilename: row.pdf_filename ?? undefined,
+    userAdded: row.user_added,
+  };
+}
+
+function songDiffKey(song: Song): string {
+  const { pdfUrl, pdfAssetId, pdfFilename, ...rest } = song;
+  return JSON.stringify(rest);
+}
+
+function shouldMigrateLocalSong(song: Song): boolean {
+  const seed = SEED_SONGS.find((s) => s.id === song.id);
+  if (!seed) return true;
+  if (song.userAdded) return true;
+  return songDiffKey(song) !== songDiffKey(seed);
+}
+
+function sortCatalog(a: Song, b: Song): number {
+  return (a.setPosition ?? 999) - (b.setPosition ?? 999) || a.title.localeCompare(b.title);
+}
+
+// ─── Songs ────────────────────────────────────────────────
+// Built-in seed songs remain in the app bundle. User-added songs and edited
+// seed-song overrides are stored in Supabase so the catalogue follows you
+// across devices. Deleted built-in songs are represented as tombstones.
+
+export const sbSongs = {
+  async getRows(): Promise<SbSong[]> {
+    const userId = getDeviceId();
+    const { data, error } = await supabase
+      .from("songs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("set_position", { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as SbSong[];
+  },
+
+  async getCatalog(): Promise<Song[]> {
+    await this.migrateLocalSongs();
+
+    const [rows, pdfMap] = await Promise.all([
+      this.getRows(),
+      sbSongPdfs.getAll().catch(() => ({} as Record<string, { url: string; name: string }>)),
+    ]);
+
+    const map = new Map<string, Song>(SEED_SONGS.map((song) => [song.id, { ...song, tags: [...song.tags] }]));
+
+    for (const row of rows) {
+      if (row.is_deleted) {
+        map.delete(row.id);
+      } else {
+        map.set(row.id, sbSongToSong(row));
+      }
+    }
+
+    for (const [songId, pdf] of Object.entries(pdfMap)) {
+      const song = map.get(songId);
+      if (song) map.set(songId, { ...song, pdfUrl: pdf.url, pdfFilename: pdf.name, pdfAssetId: undefined });
+    }
+
+    return Array.from(map.values()).sort(sortCatalog);
+  },
+
+  async upsert(song: Song): Promise<void> {
+    const userId = getDeviceId();
+    const payload = songToSbSong(song, userId, false);
+    const { error } = await supabase
+      .from("songs")
+      .upsert(payload, { onConflict: "id,user_id" });
+    if (error) throw error;
+  },
+
+  async updatePdf(songId: string, pdfUrl: string, pdfFilename: string): Promise<void> {
+    const song = (await this.getCatalog()).find((s) => s.id === songId);
+    if (!song) return;
+    await this.upsert({ ...song, pdfUrl, pdfFilename, pdfAssetId: undefined });
+  },
+
+  async removePdf(songId: string): Promise<void> {
+    const song = (await this.getCatalog()).find((s) => s.id === songId);
+    if (!song) return;
+    const { pdfUrl: _url, pdfAssetId: _asset, pdfFilename: _name, ...rest } = song;
+    await this.upsert(rest as Song);
+  },
+
+  async delete(songId: string): Promise<void> {
+    const userId = getDeviceId();
+    const seed = SEED_SONGS.find((s) => s.id === songId);
+    if (seed) {
+      const { error } = await supabase
+        .from("songs")
+        .upsert(songToSbSong(seed, userId, true), { onConflict: "id,user_id" });
+      if (error) throw error;
+      return;
+    }
+
+    const { error } = await supabase
+      .from("songs")
+      .delete()
+      .eq("id", songId)
+      .eq("user_id", userId);
+    if (error) throw error;
+  },
+
+  async migrateLocalSongs(): Promise<void> {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem(LOCAL_SONG_MIGRATION_KEY) === "true") return;
+
+    try {
+      const localSongs = songsStore.getAll();
+      const toSync = localSongs.filter(shouldMigrateLocalSong);
+
+      for (const song of toSync) {
+        await this.upsert(song);
+        if (song.pdfUrl) {
+          await sbSongPdfs.save(song.id, song.pdfUrl, song.pdfFilename ?? "Sheet music.pdf");
+        }
+      }
+
+      localStorage.setItem(LOCAL_SONG_MIGRATION_KEY, "true");
+    } catch (err) {
+      console.warn("Local song migration to Supabase was skipped", err);
+    }
+  },
+};
 
 // ─── Setlists ─────────────────────────────────────────────
 

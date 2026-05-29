@@ -117,6 +117,7 @@ The code expects these Supabase resources to exist:
 - `song_pdfs`
 - `song_requests`
 - `request_log`
+- `songs`
 
 ### Storage
 
@@ -126,10 +127,11 @@ The code expects these Supabase resources to exist:
 
 For commercial use, the `pdfs` bucket should be private with signed URLs, and all tables/storage objects should be protected by RLS.
 
-Apply the Phase 3 migration before relying on scoped audience requests:
+Apply these migrations before relying on the current cloud-sync behavior:
 
 ```text
 supabase/migrations/20260528_phase3_gig_scoped_requests.sql
+supabase/migrations/20260528_phase4_cloud_songs_cleanup.sql
 ```
 
 See `docs/PHASE3_SUPABASE_SECURITY.md` for the remaining personal-MVP versus commercial security gap.
@@ -142,9 +144,9 @@ New PDF uploads from both the song detail modal and add-song modal now use Supab
 
 1. Upload file to the `pdfs` storage bucket.
 2. Save the public URL and original name in `song_pdfs`.
-3. Patch the local song record with the PDF URL for the current browser.
+3. Save/update the synced song record so the PDF is visible across devices.
 
-The legacy GitHub Release Asset/PAT workflow is no longer used by Add Song. Some legacy helper files remain in the repo until the rest of the migration is cleaned up.
+The legacy GitHub Release Asset/PAT workflow has been removed from the client code.
 
 ---
 
@@ -152,10 +154,11 @@ The legacy GitHub Release Asset/PAT workflow is no longer used by Add Song. Some
 
 These are intentional current-state notes, not deployment steps:
 
-- User-added songs still live in `localStorage`.
-- Setlist quick-add, Stage edits, venues, active sessions, PDFs, requests, and performance notes now use Supabase from the UI.
+- User-added songs and edited seed-song overrides now sync through Supabase after the Phase 4 migration is applied.
+- The first app load after deploying Phase 4 migrates any existing local user-added songs into Supabase.
+- Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.
 - There is no authentication or commercial-grade tenancy yet.
-- The included RLS migration is a personal-MVP baseline. It is not a commercial-grade auth/tenant model.
+- The included RLS migrations are a personal-MVP baseline. They are not a commercial-grade auth/tenant model.
 

@@ -36,7 +36,7 @@ export default function SettingsPage() {
           <Wifi className="w-5 h-5 text-green-600" />
           <div>
             <div className="font-semibold text-sm">Cross-Device Sync</div>
-            <div className="text-xs text-muted-foreground">Setlists, venues, session &amp; PDFs via Supabase</div>
+            <div className="text-xs text-muted-foreground">Songs, setlists, venues, session &amp; PDFs via Supabase</div>
           </div>
           <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700/40 rounded-full px-2.5 py-0.5">
             <CheckCircle2 className="w-3 h-3" /> Active
@@ -58,7 +58,7 @@ export default function SettingsPage() {
         </div>
         <div className="bg-muted rounded-lg p-3 text-xs font-mono text-muted-foreground space-y-0.5">
           <div>Project: bephofcynjspsulmuikh</div>
-          <div>Tables: setlists · venues · perf_notes · active_sessions</div>
+          <div>Tables: songs · setlists · venues · perf_notes · active_sessions</div>
           <div>Storage: pdfs bucket (public, up to 20 MB per file)</div>
         </div>
       </div>

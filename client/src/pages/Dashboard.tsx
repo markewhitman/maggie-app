@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
-import type { Song, Setlist } from "@/lib/data";
-import { songsStore } from "@/lib/data";
-import { sbSetlists, type SbSetlist } from "@/lib/supabase";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { SEED_SONGS, type Song, type Setlist } from "@/lib/data";
+import { sbSetlists, sbSongs, type SbSetlist } from "@/lib/supabase";
 import { SongCard } from "@/components/SongCard";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { AddSongModal } from "@/components/AddSongModal";
@@ -114,7 +113,7 @@ const FILTER_GROUPS = [
 ];
 
 export default function Dashboard() {
-  const [songs, setSongs] = useState<Song[]>(() => songsStore.getAll());
+  const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [search, setSearch] = useState("");
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -127,7 +126,21 @@ export default function Dashboard() {
   const { toast } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
+  const loadSongs = useCallback(async () => {
+    try {
+      const catalog = await sbSongs.getCatalog();
+      setSongs(catalog);
+    } catch (err: any) {
+      toast({
+        title: "Songs unavailable",
+        description: err?.message ?? "Could not load the cloud song catalogue.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
   useEffect(() => {
+    loadSongs();
     sbSetlists
       .getAll()
       .then((rows) => setSetlists(rows.map(sbToSetlist)))
@@ -138,7 +151,7 @@ export default function Dashboard() {
           variant: "destructive",
         });
       });
-  }, []);
+  }, [loadSongs, toast]);
 
   const handleAddToSetlist = async (setlistId: string, song: Song) => {
     const setlist = setlists.find((s) => s.id === setlistId);
@@ -163,7 +176,7 @@ export default function Dashboard() {
     }
   };
 
-  const refresh = () => setSongs(songsStore.getAll());
+  const refresh = () => { void loadSongs(); };
 
   const filtered = useMemo(() => {
     return songs.filter((s) => {
@@ -382,12 +395,12 @@ export default function Dashboard() {
           onDelete={async (id) => {
             const confirmed = await confirm({
               title: "Delete this song?",
-              description: "This removes it from your local song library. This cannot be undone.",
+              description: "This removes it from your synced song library. This cannot be undone.",
               confirmLabel: "Delete song",
               destructive: true,
             });
             if (!confirmed) return;
-            songsStore.delete(id);
+            await sbSongs.delete(id);
             refresh();
             setSelectedSong(null);
             toast({ title: "Song removed" });

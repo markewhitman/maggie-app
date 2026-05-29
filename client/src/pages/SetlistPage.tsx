@@ -7,8 +7,8 @@ import {
   SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { songsStore, type Song, type Setlist, type Venue, formatDuration, formatDurationLong, stageTimingStore } from "@/lib/data";
-import { sbSetlists, sbVenues, sbSession, getDeviceId, type SbSetlist, type SbVenue } from "@/lib/supabase";
+import { SEED_SONGS, type Song, type Setlist, type Venue, formatDuration, formatDurationLong, stageTimingStore } from "@/lib/data";
+import { sbSetlists, sbVenues, sbSession, sbSongs, getDeviceId, type SbSetlist, type SbVenue } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -365,7 +365,7 @@ function SetlistCard({
 // ─── Main Page ────────────────────────────────────────────
 
 export default function SetlistPage() {
-  const [songs] = useState<Song[]>(() => songsStore.getAll());
+  const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [setlists, setSetlists] = useState<Setlist[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
@@ -394,11 +394,13 @@ export default function SetlistPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sbSls, sbVens, session] = await Promise.all([
+      const [catalog, sbSls, sbVens, session] = await Promise.all([
+        sbSongs.getCatalog(),
         sbSetlists.getAll(),
         sbVenues.getAll(),
         sbSession.get(),
       ]);
+      setSongs(catalog);
       setSetlists(sbSls.map(sbToSetlist));
       setVenues(sbVens.map(sbToVenue));
       if (session) {

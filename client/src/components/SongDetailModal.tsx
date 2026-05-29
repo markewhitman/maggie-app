@@ -3,8 +3,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { Song, PerformanceNote } from "@/lib/data";
-import { songsStore, formatDuration } from "@/lib/data";
-import { sbPdfs, sbSongPdfs, sbPerfNotes, type SbPerfNote } from "@/lib/supabase";
+import { formatDuration } from "@/lib/data";
+import { sbPdfs, sbSongPdfs, sbPerfNotes, sbSongs, type SbPerfNote } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pd
 interface Props {
   song: Song;
   onClose: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void | Promise<void>;
   onEdit?: (updated: Song) => void; // if provided, shows Edit tab
   defaultTab?: "info" | "pdf" | "history" | "edit";
 }
@@ -69,7 +69,7 @@ function StarRating({ value }: { value: number }) {
 
 // ─── Edit Form ────────────────────────────────────────────
 
-function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) => void; onCancel: () => void }) {
+function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) => void | Promise<void>; onCancel: () => void }) {
   const [form, setForm] = useState<Song>({ ...song });
   const set = (field: keyof Song, value: any) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -254,11 +254,10 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
     sbSongPdfs.getAll().then((map) => {
       const entry = map[initialSong.id];
       if (entry && entry.url !== initialSong.pdfUrl) {
-        const patched = { ...initialSong, pdfUrl: entry.url, pdfFileName: entry.name };
-        songsStore.updatePdf(initialSong.id, entry.url, 0, entry.name);
+        const patched = { ...initialSong, pdfUrl: entry.url, pdfFilename: entry.name, pdfAssetId: undefined };
         setSong(patched);
       }
-    }).catch(() => {/* network error — use localStorage value */});
+    }).catch(() => {/* network error — use current in-memory value */});
   }, [initialSong.id]);
 
   // Load synced performance history for this song.
@@ -268,11 +267,6 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
       .then((rows) => setPerfHistory(rows.map(sbToPerfNote)))
       .catch(() => setPerfHistory([]));
   }, [initialSong.id]);
-
-  const refreshSong = () => {
-    const updated = songsStore.getAll().find((s) => s.id === song.id);
-    if (updated) setSong(updated);
-  };
 
   const handleUpload = useCallback(async (file: File) => {
     if (!file.name.endsWith(".pdf") && file.type !== "application/pdf") {
@@ -284,8 +278,8 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
       const publicUrl = await sbPdfs.upload(song.id, file);
       // Save URL to Supabase so all devices can find it
       await sbSongPdfs.save(song.id, publicUrl, file.name);
-      songsStore.updatePdf(song.id, publicUrl, 0, file.name);
-      refreshSong();
+      await sbSongs.updatePdf(song.id, publicUrl, file.name).catch(() => undefined);
+      setSong((prev) => ({ ...prev, pdfUrl: publicUrl, pdfFilename: file.name, pdfAssetId: undefined }));
       toast({ title: "PDF uploaded!", description: file.name });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -322,8 +316,11 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
     } catch {
       // Ignore storage errors — remove locally regardless
     }
-    songsStore.removePdf(song.id);
-    refreshSong();
+    await sbSongs.removePdf(song.id).catch(() => undefined);
+    setSong((prev) => {
+      const { pdfUrl: _url, pdfAssetId: _asset, pdfFilename: _name, ...rest } = prev;
+      return rest as Song;
+    });
     toast({ title: "PDF removed" });
   };
 
@@ -646,11 +643,19 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
             <TabsContent value="edit" className="mt-0">
               <EditForm
                 song={song}
-                onSave={(updated) => {
-                  songsStore.upsert(updated);
-                  setSong(updated);
-                  onEdit(updated);
-                  toast({ title: "Song updated", description: updated.title });
+                onSave={async (updated) => {
+                  try {
+                    await sbSongs.upsert(updated);
+                    setSong(updated);
+                    onEdit(updated);
+                    toast({ title: "Song updated", description: updated.title });
+                  } catch (err: any) {
+                    toast({
+                      title: "Could not save song",
+                      description: err?.message ?? "The cloud save failed. Try again when you are online.",
+                      variant: "destructive",
+                    });
+                  }
                 }}
                 onCancel={onClose}
               />
