@@ -210,3 +210,9 @@ No Supabase SQL migration is required for Phase 5.9.
 Phase 5.10 adds a dedicated Stage Performance view and replaces copy-only audience link behavior with QR/share dialogs. Setlist and Stage audience-share controls now show the scoped QR code, set name, and copy/share/preview actions. Audience request pages also identify the target set and can show either Tonight’s Set or All Songs.
 
 No Supabase SQL migration is required for Phase 5.10.
+
+## Phase 5.11 notes — Smart PDF Song Import
+
+Phase 5.11 improves the Add Song workflow. When a performer attaches a PDF, the app reads the filename and selectable PDF text to suggest song-card fields such as title, artist, key, capo, chords, strumming, tempo, duration, source URL, tags, and stage notes. Blank fields are filled automatically when possible, and the Smart PDF Import review panel allows Fill blanks or Apply all before saving.
+
+No Supabase SQL migration is required for Phase 5.11. Scanned/image-only PDFs still require manual entry unless OCR is added later.

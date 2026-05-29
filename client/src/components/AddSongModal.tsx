@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import type { Song } from "@/lib/data";
 import { sbPdfs, sbSongPdfs, sbSongs } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Loader2, Music, Tag, Upload, X } from "lucide-react";
+import { analyzeSongPdf, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
+import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Loader2, Music, Sparkles, Tag, Upload, Wand2, X } from "lucide-react";
 
 interface Props {
   onClose: () => void;
@@ -74,6 +75,26 @@ function inferDecade(year: number): Song["decade"] {
   return undefined;
 }
 
+
+function suggestionTone(confidence: SmartImportSuggestion["confidence"]): string {
+  if (confidence === "high") return "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100";
+  if (confidence === "medium") return "border-amber-300/50 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100";
+  return "border-border bg-muted/50 text-muted-foreground";
+}
+
+function SuggestionRow({ label, suggestion }: { label: string; suggestion?: SmartImportSuggestion }) {
+  if (!suggestion) return null;
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 rounded-lg border border-border/70 bg-background/70 px-2.5 py-2 text-xs">
+      <div className="sm:w-28 font-semibold text-muted-foreground">{label}</div>
+      <div className="flex-1 min-w-0 font-medium truncate">{suggestion.value}</div>
+      <Badge variant="outline" className={`w-fit text-[10px] ${suggestionTone(suggestion.confidence)}`}>
+        {confidenceLabel(suggestion.confidence)} · {suggestion.source}
+      </Badge>
+    </div>
+  );
+}
+
 function SectionHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
     <div className="flex items-start gap-2 rounded-xl bg-muted/40 border border-border px-3 py-2">
@@ -92,6 +113,8 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
   const [saving, setSaving] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [durationInput, setDurationInput] = useState("");
+  const [analyzingPdf, setAnalyzingPdf] = useState(false);
+  const [smartImport, setSmartImport] = useState<SmartPdfImportResult | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -116,6 +139,52 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
 
   const set = (k: keyof typeof form) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
 
+
+  const applySmartImport = (result: SmartPdfImportResult, overwrite = false) => {
+    const s = result.suggestions;
+    setForm((prev) => {
+      const next = { ...prev };
+      const apply = (field: keyof typeof form, value?: string) => {
+        if (!value) return;
+        if (overwrite || !String(next[field] ?? "").trim() || (field === "capo" && next.capo === "No capo")) {
+          (next as any)[field] = value;
+        }
+      };
+
+      apply("title", s.title?.value);
+      apply("artist", s.artist?.value);
+      apply("key", s.key?.value);
+      apply("capo", s.capo?.value);
+      apply("chords", s.chords?.value);
+      apply("strumming", s.strumming?.value);
+      apply("tempo", s.tempo?.value);
+      apply("genre", s.genre?.value);
+      apply("mood", s.mood?.value);
+      apply("energy", s.energy?.value as any);
+      apply("vocalStyle", s.vocalStyle?.value as any);
+      apply("ultimateGuitarUrl", s.ultimateGuitarUrl?.value);
+
+      if (s.tags?.value) {
+        if (overwrite || !next.tags.trim()) {
+          next.tags = s.tags.value;
+        } else {
+          const current = new Set(next.tags.split(",").map((tag) => tag.trim()).filter(Boolean));
+          s.tags.value.split(",").map((tag) => tag.trim()).filter(Boolean).forEach((tag) => current.add(tag));
+          next.tags = Array.from(current).join(", ");
+        }
+      }
+
+      if (s.performanceNote?.value) {
+        if (overwrite || !next.performanceNote.trim()) next.performanceNote = s.performanceNote.value;
+      }
+      return next;
+    });
+
+    if (s.duration?.value && (overwrite || !durationInput.trim())) {
+      setDurationInput(s.duration.value);
+    }
+  };
+
   const duplicateInfo = useMemo(() => {
     const title = form.title.trim().toLowerCase();
     const artist = form.artist.trim().toLowerCase();
@@ -131,9 +200,10 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
     return Math.round((completed / fields.length) * 100);
   }, [form]);
 
-  const handlePdfSelection = (file: File | undefined) => {
+  const handlePdfSelection = async (file: File | undefined) => {
     if (!file) {
       setPdfFile(null);
+      setSmartImport(null);
       return;
     }
 
@@ -148,6 +218,27 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
     }
 
     setPdfFile(file);
+    setSmartImport(null);
+    setAnalyzingPdf(true);
+
+    try {
+      const result = await analyzeSongPdf(file, existingSongs);
+      setSmartImport(result);
+      applySmartImport(result, false);
+      toast({
+        title: result.readableTextFound ? "PDF scanned for song details" : "PDF attached",
+        description: result.readableTextFound
+          ? "I filled blank fields from the readable PDF text. Review before saving."
+          : "No selectable text was found, so I used the filename where possible.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "PDF attached",
+        description: err?.message ? `Smart import could not read the PDF: ${err.message}` : "Smart import could not read the PDF, but the file is attached.",
+      });
+    } finally {
+      setAnalyzingPdf(false);
+    }
   };
 
   const handleSave = async () => {
@@ -274,6 +365,63 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
                 </div>
               </div>
             </div>
+          )}
+
+          {(analyzingPdf || smartImport) && (
+            <section className="rounded-2xl border border-primary/25 bg-primary/5 p-3 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5 rounded-full bg-primary/10 p-1.5 text-primary">
+                    {analyzingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm">Smart PDF Import</div>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      {analyzingPdf
+                        ? "Reading the PDF text and filename for title, artist, key, capo, chords, tempo, and tags…"
+                        : smartImport?.readableTextFound
+                          ? `Found readable PDF text${smartImport.pageCount ? ` across ${smartImport.pageCount} page${smartImport.pageCount === 1 ? "" : "s"}` : ""}. Review suggestions before saving.`
+                          : "No selectable PDF text was found. Suggestions are based on the filename only; scanned PDFs still need manual entry."}
+                    </p>
+                  </div>
+                </div>
+                {smartImport && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => applySmartImport(smartImport, false)}>
+                      <Wand2 className="w-3.5 h-3.5" /> Fill blanks
+                    </Button>
+                    <Button type="button" size="sm" className="gap-1.5" onClick={() => applySmartImport(smartImport, true)}>
+                      <Wand2 className="w-3.5 h-3.5" /> Apply all
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {smartImport && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <SuggestionRow label="Title" suggestion={smartImport.suggestions.title} />
+                    <SuggestionRow label="Artist" suggestion={smartImport.suggestions.artist} />
+                    <SuggestionRow label="Key" suggestion={smartImport.suggestions.key} />
+                    <SuggestionRow label="Capo" suggestion={smartImport.suggestions.capo} />
+                    <SuggestionRow label="Chords" suggestion={smartImport.suggestions.chords} />
+                    <SuggestionRow label="Strumming" suggestion={smartImport.suggestions.strumming} />
+                    <SuggestionRow label="Tempo" suggestion={smartImport.suggestions.tempo} />
+                    <SuggestionRow label="Duration" suggestion={smartImport.suggestions.duration} />
+                    <SuggestionRow label="Tags" suggestion={smartImport.suggestions.tags} />
+                    <SuggestionRow label="Source URL" suggestion={smartImport.suggestions.ultimateGuitarUrl} />
+                  </div>
+                  {smartImport.warnings.length > 0 && (
+                    <div className="text-xs text-muted-foreground rounded-lg border border-border bg-background/70 px-3 py-2">
+                      {smartImport.warnings.join(" ")}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Smart import never changes the original PDF. It only pre-fills editable song-card fields.
+                  </p>
+                </div>
+              )}
+            </section>
           )}
 
           <section className="space-y-3">
@@ -427,26 +575,26 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Sheet Music / Tab PDF (optional)</Label>
+                <Label className="text-xs">Sheet Music / Tab PDF + Smart Import (optional)</Label>
                 {pdfFile ? (
                   <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
                     <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
                     <div className="text-sm flex-1 min-w-0">
                       <div className="truncate font-medium">{pdfFile.name}</div>
-                      <div className="text-xs text-muted-foreground">{formatBytes(pdfFile.size)} · will upload when you save</div>
+                      <div className="text-xs text-muted-foreground">{formatBytes(pdfFile.size)} · will upload when you save{analyzingPdf ? " · analyzing…" : smartImport ? " · suggestions ready" : ""}</div>
                     </div>
-                    <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => setPdfFile(null)}>
+                    <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setPdfFile(null); setSmartImport(null); }}>
                       <X className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 ) : (
                   <label className="flex items-center gap-2 border border-dashed border-border rounded-lg px-3 py-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
                     <Upload className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Attach a PDF under 20 MB</span>
+                    <span className="text-sm text-muted-foreground">Attach a PDF under 20 MB to auto-fill song details</span>
                     <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => handlePdfSelection(e.target.files?.[0])} />
                   </label>
                 )}
-                <p className="text-xs text-muted-foreground">PDFs upload to Supabase Storage and sync through the song PDF map.</p>
+                <p className="text-xs text-muted-foreground">Text-based PDFs can auto-fill title, artist, key, capo, chords, tempo, tags, and stage notes. Scanned PDFs can still be attached and filled manually.</p>
               </div>
             </div>
           </section>
