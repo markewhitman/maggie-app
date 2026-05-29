@@ -19,6 +19,7 @@ This guide reflects the current app architecture: the frontend is hosted on GitH
 | Built-in seed songs | Frontend bundle, with Supabase overrides/tombstones |
 | User-added songs and song edits | Supabase `songs` table |
 | Performance notes | Supabase `perf_notes` table in Stage and song history views |
+| PDF annotations | Supabase `pdf_annotations` table, stored as overlay JSON |
 
 The app currently uses a shared single-user Supabase identity in `client/src/lib/supabase.ts`. That is suitable for a private personal app only. A commercial release needs authentication, per-user tenancy, RLS policies, and private/scoped audience routes.
 
@@ -119,6 +120,7 @@ The code expects these Supabase resources to exist:
 - `song_requests`
 - `request_log`
 - `songs`
+- `pdf_annotations`
 
 ### Storage
 
@@ -135,6 +137,7 @@ supabase/migrations/20260528_phase3_gig_scoped_requests.sql
 supabase/migrations/20260528_phase4_cloud_songs_cleanup.sql
 supabase/migrations/20260528_phase4_2_cleanup_reliability.sql
 supabase/migrations/20260528_phase5_security_hardening.sql
+supabase/migrations/20260528_phase5_8_performance_pdf_viewer.sql
 ```
 
 See `docs/PHASE5_SECURITY_HARDENING.md` for the current personal-MVP hardening baseline and the remaining commercial security gap.
@@ -153,8 +156,9 @@ Settings includes **Backup & Export**, which downloads a JSON file containing:
 - pending/request history metadata
 - song-to-PDF URL mappings
 - local app preferences
+- PDF annotation overlay data
 
-The backup contains PDF URLs, not PDF file binaries. Supabase Storage remains the source of truth for uploaded PDFs.
+The backup contains PDF URLs and annotation overlay data, not PDF file binaries. Supabase Storage remains the source of truth for uploaded PDFs.
 
 ---
 
@@ -166,7 +170,7 @@ New PDF uploads from both the song detail modal and add-song modal now use Supab
 2. Save the public URL and original name in `song_pdfs`.
 3. Save/update the synced song record so the PDF is visible across devices.
 
-The legacy GitHub Release Asset/PAT workflow has been removed from the client code. The fullscreen PDF viewer and PDF preview are lazy-loaded so the initial app bundle is smaller; PDF code downloads only when sheet music is opened.
+The legacy GitHub Release Asset/PAT workflow has been removed from the client code. The fullscreen PDF viewer and PDF preview are lazy-loaded so the initial app bundle is smaller; PDF code downloads only when sheet music is opened. The fullscreen viewer supports Page and Scroll modes, swipe/tap page turning, and optional annotation overlays saved to Supabase.
 
 ---
 
@@ -181,6 +185,7 @@ These are intentional current-state notes, not deployment steps:
 - Phase 5.5 is a front-end polish pass: larger Stage controls, Focus mode, clearer Audience request buttons, setlist duplication, and PDF fit/last-page behavior.
 - Phase 5.6 polishes the setlist builder: visible runtime summaries, duplicate-song warnings, clearer drag/reorder affordances, builder clear-order support, and Stage progress reset.
 - Phase 5.7 polishes the song library and add/edit workflow: quick library stats/filters, sorting, clearer song cards, duplicate warnings, duration entry, and stronger song detail organization.
+- Phase 5.8 improves the performer PDF viewer: Page/Scroll modes, swipe page turns, pen/touch annotation overlays, eraser/undo/clear-page controls, and backup export of annotation data.
 - Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.

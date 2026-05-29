@@ -605,6 +605,103 @@ export const sbSongPdfs = {
   },
 };
 
+
+// ─── PDF Annotations ─────────────────────────────────────
+// Annotation strokes are stored separately from the source PDF so the original
+// sheet music remains unchanged. Coordinates are normalized 0..1 per page.
+
+export interface PdfAnnotationPoint {
+  x: number;
+  y: number;
+}
+
+export interface PdfAnnotationStroke {
+  id: string;
+  page: number;
+  color: string;
+  width: number;
+  points: PdfAnnotationPoint[];
+}
+
+export interface SbPdfAnnotation {
+  id: string;
+  user_id: string;
+  song_id: string;
+  pdf_url: string;
+  annotations: PdfAnnotationStroke[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+function hashText(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function pdfAnnotationId(songId: string, pdfUrl: string): string {
+  return `${getDeviceId()}:${songId}:${hashText(pdfUrl)}`;
+}
+
+export const sbPdfAnnotations = {
+  async get(songId: string, pdfUrl: string): Promise<PdfAnnotationStroke[]> {
+    const userId = getDeviceId();
+    const id = pdfAnnotationId(songId, pdfUrl);
+    const { data, error } = await supabase
+      .from("pdf_annotations")
+      .select("annotations")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    return Array.isArray(data?.annotations) ? (data.annotations as PdfAnnotationStroke[]) : [];
+  },
+
+  async save(songId: string, pdfUrl: string, annotations: PdfAnnotationStroke[]): Promise<void> {
+    const userId = getDeviceId();
+    const id = pdfAnnotationId(songId, pdfUrl);
+    const { error } = await supabase
+      .from("pdf_annotations")
+      .upsert(
+        {
+          id,
+          user_id: userId,
+          song_id: songId,
+          pdf_url: pdfUrl,
+          annotations,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+    if (error) throw error;
+  },
+
+  async getAll(): Promise<SbPdfAnnotation[]> {
+    const userId = getDeviceId();
+    const { data, error } = await supabase
+      .from("pdf_annotations")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as SbPdfAnnotation[];
+  },
+
+  async remove(songId: string, pdfUrl: string): Promise<void> {
+    const userId = getDeviceId();
+    const id = pdfAnnotationId(songId, pdfUrl);
+    const { error } = await supabase
+      .from("pdf_annotations")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+  },
+};
+
 // ─── Audience Song Requests ──────────────────────────────
 // Audience taps “Request” → row inserted. Stage page polls and displays queue.
 

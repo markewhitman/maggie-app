@@ -1,5 +1,6 @@
 import {
   getDeviceId,
+  sbPdfAnnotations,
   sbPerfNotes,
   sbRequests,
   sbSession,
@@ -22,6 +23,7 @@ export interface MaggieBackup {
     activeSession: unknown | null;
     performanceNotes: unknown[];
     songPdfs: Record<string, { url: string; name: string }>;
+    pdfAnnotations: unknown[];
     pendingRequests: unknown[];
     requestLog: unknown[];
   };
@@ -61,7 +63,7 @@ async function getPendingRequestsSafely(): Promise<unknown[]> {
 }
 
 export async function createMaggieBackup(): Promise<MaggieBackup> {
-  const [songs, setlists, venues, activeSession, performanceNotes, songPdfs, pendingRequests, requestLog] =
+  const [songs, setlists, venues, activeSession, performanceNotes, songPdfs, pdfAnnotations, pendingRequests, requestLog] =
     await Promise.all([
       sbSongs.getCatalog(),
       sbSetlists.getAll(),
@@ -69,6 +71,7 @@ export async function createMaggieBackup(): Promise<MaggieBackup> {
       sbSession.get(),
       sbPerfNotes.getAll(),
       sbSongPdfs.getAll().catch(() => ({} as Record<string, { url: string; name: string }>)),
+      sbPdfAnnotations.getAll().catch(() => []),
       getPendingRequestsSafely(),
       sbRequests.getLog().catch(() => []),
     ]);
@@ -85,12 +88,13 @@ export async function createMaggieBackup(): Promise<MaggieBackup> {
       activeSession,
       performanceNotes,
       songPdfs,
+      pdfAnnotations,
       pendingRequests,
       requestLog,
     },
     localPreferences: collectLocalPreferences(),
     notes: [
-      "This backup exports metadata and public PDF URLs, not PDF file binaries.",
+      "This backup exports metadata, public PDF URLs, and annotation overlay data, not PDF file binaries.",
       "Use Supabase Storage as the source of truth for uploaded PDF files.",
     ],
   };

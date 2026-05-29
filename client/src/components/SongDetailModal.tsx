@@ -466,6 +466,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                 <FullscreenPdfViewer
                   pdfUrl={song.pdfUrl}
                   songTitle={song.title}
+                  songId={song.id}
                   onClose={() => setFullscreenPdf(false)}
                   initialPage={pageNumber}
                 />
@@ -482,6 +483,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                 <FullscreenPdfViewer
                   pdfUrl={song.pdfUrl}
                   songTitle={song.title}
+                  songId={song.id}
                   onClose={() => setFullscreenPdf(false)}
                   initialPage={pageNumber}
                 />

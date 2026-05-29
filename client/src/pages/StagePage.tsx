@@ -1811,6 +1811,7 @@ export default function StagePage() {
               <FullscreenPdfViewer
                 pdfUrl={url}
                 songTitle={fullscreenPdfSong.title}
+                songId={fullscreenPdfSong.id}
                 onClose={() => setFullscreenPdfSong(null)}
               />
             </Suspense>
