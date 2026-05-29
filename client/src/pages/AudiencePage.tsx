@@ -90,10 +90,12 @@ interface Request {
 function AudienceSongCard({
   song,
   requested,
+  submitting,
   onRequest,
 }: {
   song: Song;
   requested: boolean;
+  submitting: boolean;
   onRequest: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -113,96 +115,89 @@ function AudienceSongCard({
 
   return (
     <div
-      className={`audience-card rounded-xl border text-left transition-all overflow-hidden ${
+      className={`audience-card rounded-2xl border text-left transition-all overflow-hidden ${
         requested
-          ? "border-primary bg-primary/8"
+          ? "border-primary bg-primary/10 shadow-sm shadow-primary/10"
           : "border-border bg-card"
       }`}
       data-testid={`audience-song-${song.id}`}
     >
-      {/* Main clickable row */}
-      <button
-        className="w-full flex items-center gap-3 p-3 text-left active:scale-[0.98] transition-transform"
-        onClick={onRequest}
-      >
-        {/* Request indicator */}
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all ${
-          requested
-            ? "bg-primary"
-            : "border border-border text-muted-foreground hover:border-primary hover:text-primary"
-        }`}>
-          {requested ? (
-            <Check className="w-4 h-4 text-primary-foreground" />
-          ) : (
-            <Heart className="w-3.5 h-3.5" />
-          )}
+      <div className="p-3.5 sm:p-4">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            className="flex-1 min-w-0 text-left"
+            onClick={() => setExpanded((p) => !p)}
+            aria-expanded={expanded}
+          >
+            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              {genreLabel && (
+                <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full leading-none">
+                  {genreLabel}
+                </span>
+              )}
+              {song.energy && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full leading-none ${energyColor}`}>
+                  {song.energy === "high" ? "High energy" : song.energy === "medium" ? "Mid energy" : "Mellow"}
+                </span>
+              )}
+              {moodLabel && <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full leading-none">{moodLabel}</span>}
+            </div>
+            <div className="font-display font-bold italic text-base leading-tight">{song.title}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{song.artist} · {song.year}</div>
+          </button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={requested ? "default" : "outline"}
+            className="h-11 shrink-0 gap-1.5 rounded-full px-3"
+            onClick={onRequest}
+            disabled={requested || submitting}
+          >
+            {requested ? <Check className="w-4 h-4" /> : <Heart className="w-4 h-4" />}
+            <span className="text-xs font-semibold">{submitting ? "Sending…" : requested ? "Sent" : "Request"}</span>
+          </Button>
         </div>
 
-        {/* Song info */}
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm leading-tight">{song.title}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">{song.artist} · {song.year}</div>
-        </div>
-
-        {/* Genre + energy chips */}
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {genreLabel && (
-            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full leading-none">
-              {genreLabel}
-            </span>
-          )}
-          {song.energy && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full leading-none ${energyColor}`}>
-              {song.energy === "high" ? "🔥 High" : song.energy === "medium" ? "〜 Mid" : "💤 Low"}
-            </span>
-          )}
-        </div>
-      </button>
-
-      {/* Expandable details */}
-      <div className="border-t border-border/50">
         <button
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          type="button"
+          className="mt-2 w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => setExpanded((p) => !p)}
         >
-          <span className="flex items-center gap-2">
-            {moodLabel && (
-              <span className="bg-muted px-1.5 py-0.5 rounded-full">{moodLabel}</span>
-            )}
-            {song.mood2 !== song.mood && song.mood && (
-              <span className="bg-muted px-1.5 py-0.5 rounded-full">
-                {MOOD_LABELS[song.mood?.toLowerCase().replace(/ /g, "-") ?? ""] ?? song.mood.split(",")[0].trim()}
-              </span>
-            )}
-          </span>
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          <span>{expanded ? "Hide song details" : "Show vibe and similar songs"}</span>
+          {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
-
-        {expanded && (
-          <div className="px-3 pb-3 space-y-2">
-            {/* Similar songs */}
-            {song.similar && song.similar.length > 0 && (
-              <div>
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">If you like this, also try</div>
-                <div className="flex flex-wrap gap-1">
-                  {song.similar.map((s) => (
-                    <span key={s} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Vocal style */}
-            {song.vocalStyle && (
-              <div className="text-xs text-muted-foreground">
-                <span className="font-medium">Style:</span>{" "}
-                {song.vocalStyle.charAt(0).toUpperCase() + song.vocalStyle.slice(1)}
-              </div>
-            )}
-          </div>
-        )}
       </div>
+
+      {expanded && (
+        <div className="border-t border-border/50 px-3.5 sm:px-4 pb-4 pt-3 space-y-2 bg-background/30">
+          {song.mood2 !== song.mood && song.mood && (
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Vibe:</span>{" "}
+              {MOOD_LABELS[song.mood?.toLowerCase().replace(/ /g, "-") ?? ""] ?? song.mood.split(",")[0].trim()}
+            </div>
+          )}
+          {song.similar && song.similar.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">If you like this, also try</div>
+              <div className="flex flex-wrap gap-1">
+                {song.similar.map((s) => (
+                  <span key={s} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {song.vocalStyle && (
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Style:</span>{" "}
+              {song.vocalStyle.charAt(0).toUpperCase() + song.vocalStyle.slice(1)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -225,6 +220,7 @@ export default function AudiencePage() {
   const effectiveGigId = routeGigId ?? activeGigId;
   const [search, setSearch] = useState("");
   const [requests, setRequests] = useState<Request[]>([]);
+  const [submittingIds, setSubmittingIds] = useState<Set<string>>(new Set());
   const [showQR, setShowQR] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
@@ -281,19 +277,26 @@ export default function AudiencePage() {
   const requestSong = async (song: Song) => {
     const alreadyRequested = requests.some((r) => r.songId === song.id);
     if (alreadyRequested) {
-      toast({ title: "Already requested!", description: `${song.title} is in the queue` });
+      toast({ title: "Already requested!", description: `${song.title} is already in the queue` });
       return;
     }
 
+    setSubmittingIds((prev) => new Set(prev).add(song.id));
     try {
       await sbRequests.submit(song.id, song.title, effectiveGigId);
       setRequests((prev) => [...prev, { songId: song.id, timestamp: Date.now() }]);
-      toast({ title: "Request sent!", description: `${song.title} has been requested` });
+      toast({ title: "Request sent to Maggie!", description: `“${song.title}” is in the request queue` });
     } catch (err: any) {
       toast({
         title: "Failed to send request",
         description: err?.message ?? "Please check your connection and try again.",
         variant: "destructive",
+      });
+    } finally {
+      setSubmittingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        return next;
       });
     }
   };
@@ -391,7 +394,7 @@ export default function AudiencePage() {
         {/* Welcome */}
         <div className="text-center py-3 mb-3">
           <h1 className="font-display font-bold text-2xl italic text-primary mb-1">Request a Song</h1>
-          <p className="text-sm text-muted-foreground">Tap a song to request it · use the row below each song for details</p>
+          <p className="text-sm text-muted-foreground">Use the Request button to send a song straight to the stage queue.</p>
           {effectiveGigId ? (
             <p className="text-[11px] text-muted-foreground/70 mt-1">Requests are linked to tonight’s active set.</p>
           ) : (
@@ -536,6 +539,7 @@ export default function AudiencePage() {
                 key={song.id}
                 song={song}
                 requested={isRequested(song.id)}
+                submitting={submittingIds.has(song.id)}
                 onRequest={() => requestSong(song)}
               />
             ))
@@ -544,7 +548,7 @@ export default function AudiencePage() {
 
         {/* Footer */}
         <div className="text-center py-8 text-xs text-muted-foreground">
-          {songs.length} songs available · Tap to request
+          {songs.length} songs available · requests go straight to Maggie
         </div>
       </div>
     </div>

@@ -178,3 +178,19 @@ body {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+
+/* ── PHASE 5.5 LIVE-USE POLISH ────────────────────────────────────── */
+.stage-song-row {
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.stage-song-row:active {
+  transform: scale(0.995);
+}
+.stage-song-row button {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 640px) {
+  .stage-song-row {
+    border-radius: 1rem;
+  }
+}

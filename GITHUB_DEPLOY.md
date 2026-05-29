@@ -178,6 +178,7 @@ These are intentional current-state notes, not deployment steps:
 - The first app load after deploying Phase 4 migrates any existing local user-added songs into Supabase.
 - Phase 4.2 adds the missing `songs` table grants to the migration history, adds JSON backup/export, and lazy-loads PDF rendering.
 - Phase 5 enables RLS on the remaining core app tables and moves new audience links toward random audience slugs instead of raw setlist ids.
+- Phase 5.5 is a front-end polish pass: larger Stage controls, Focus mode, clearer Audience request buttons, setlist duplication, and PDF fit/last-page behavior.
 - Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.

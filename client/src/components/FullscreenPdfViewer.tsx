@@ -24,8 +24,17 @@ interface Props {
 }
 
 export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 1 }: Props) {
+  const pageKey = `maggie-pdf-last-page:${pdfUrl}`;
   const [numPages, setNumPages] = useState(0);
-  const [pageNumber, setPageNumber] = useState(initialPage);
+  const [pageNumber, setPageNumber] = useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(pageKey));
+      return Number.isFinite(saved) && saved > 0 ? saved : initialPage;
+    } catch {
+      return initialPage;
+    }
+  });
+  const [fitMode, setFitMode] = useState<"page" | "width">("page");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -69,6 +78,12 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
+  // Remember the last page per PDF during a gig/session.
+  useEffect(() => {
+    if (!numPages) return;
+    try { window.localStorage.setItem(pageKey, String(pageNumber)); } catch {}
+  }, [numPages, pageKey, pageNumber]);
+
 
   const canPrev = pageNumber > 1;
   const canNext = pageNumber < numPages;
@@ -91,6 +106,14 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
               {pageNumber} / {numPages}
             </span>
           )}
+
+          <button
+            onClick={() => setFitMode((mode) => mode === "page" ? "width" : "page")}
+            className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/80 text-xs transition-colors"
+            title="Toggle fit mode"
+          >
+            {fitMode === "page" ? "Fit page" : "Fit width"}
+          </button>
 
           {/* Open in new tab fallback */}
           <a
@@ -115,7 +138,7 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
       </div>
 
       {/* ── PDF stage area ───────────────────────────────── */}
-      <div ref={containerRef} className="flex-1 relative overflow-hidden flex items-center justify-center">
+      <div ref={containerRef} className={`flex-1 relative flex items-center justify-center ${fitMode === "width" ? "overflow-y-auto overflow-x-hidden" : "overflow-hidden"}`}>
 
         {/* Loading spinner */}
         {loading && !error && (
@@ -143,6 +166,7 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
             file={pdfUrl}
             onLoadSuccess={({ numPages: n }) => {
               setNumPages(n);
+              setPageNumber((p) => Math.min(Math.max(p, 1), n));
               setLoading(false);
             }}
             onLoadError={(err) => {
@@ -154,11 +178,8 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
           >
             <Page
               pageNumber={pageNumber}
-              /* Fit to the smaller dimension so nothing is cut off */
-              width={fitWidth}
-              height={fitHeight}
-              /* react-pdf will respect the smaller constraint automatically when both are set.
-                 We calculate the true fit ourselves to avoid letterboxing issues. */
+              width={fitMode === "width" ? Math.max(320, fitWidth - 24) : fitWidth}
+              height={fitMode === "page" ? fitHeight : undefined}
               className="shadow-2xl"
               loading={<div style={{ width: fitWidth, height: fitHeight }} />}
             />

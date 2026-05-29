@@ -351,7 +351,7 @@ function StageSongRow({
   song, status, isNext, onMarkPlayed, onMarkSkipped, onUndo, onAddNote,
   onViewSheet, onViewCard, hasPdf,
   songDuration, cumulativeTime, clockTime,
-  showDuration, showCumulative, showClock,
+  showDuration, showCumulative, showClock, focusMode = false,
 }: {
   song: Song; status: "pending" | "played" | "skipped"; isNext: boolean;
   onMarkPlayed: () => void; onMarkSkipped: () => void; onUndo: () => void;
@@ -362,84 +362,97 @@ function StageSongRow({
   showDuration: boolean;
   showCumulative: boolean;
   showClock: boolean;
+  focusMode?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: song.id });
 
+  const isDone = status !== "pending";
   const rowClass =
-    status === "played" ? "opacity-50 bg-card"
-    : status === "skipped" ? "opacity-40 bg-card line-through"
-    : isNext ? "bg-primary/10 border-primary/40 shadow-sm"
+    status === "played" ? "opacity-55 bg-card/70"
+    : status === "skipped" ? "opacity-45 bg-card/60"
+    : isNext ? "bg-primary/10 border-primary/50 shadow-sm shadow-primary/10"
     : "bg-card";
+
+  const clockLabel = clockTime
+    ? clockTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : null;
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-2 border border-border rounded-xl px-3 py-2.5 transition-all ${rowClass} ${isDragging ? "opacity-50 shadow-lg z-50" : ""}`}
+      className={`stage-song-row group border rounded-2xl px-3 py-3 sm:px-3.5 sm:py-3 transition-all ${rowClass} ${isDragging ? "opacity-50 shadow-lg z-50" : ""}`}
     >
-      <span {...attributes} {...listeners} className="drag-handle cursor-grab text-muted-foreground shrink-0">
-        <GripVertical className="w-4 h-4" />
-      </span>
-      {isNext && <div className="w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse" />}
+      <div className="flex items-start gap-3">
+        <span {...attributes} {...listeners} className="drag-handle cursor-grab text-muted-foreground shrink-0 pt-2 hidden sm:inline-flex" title="Drag to reorder">
+          <GripVertical className="w-4 h-4" />
+        </span>
 
-      {/* Tappable title area — opens sheet music if available, otherwise song card */}
-      <button
-        className="flex-1 min-w-0 text-left"
-        onClick={hasPdf ? onViewSheet : onViewCard}
-        title={hasPdf ? "Tap to view sheet music" : "Tap to view song details"}
-      >
-        <div className="flex items-center gap-2">
-          <span className={`font-medium text-sm ${status === "skipped" ? "line-through" : ""}`}>{song.title}</span>
-          {song.capo && song.capo !== "No capo" && <Badge className="capo-badge text-[10px] shrink-0">{song.capo}</Badge>}
-          {hasPdf && <FileText className="w-3 h-3 text-primary/60 shrink-0" />}
-        </div>
-        <div className="text-xs text-muted-foreground">
-          {song.artist} · {song.key.split(" ")[0]}
-        </div>
-      </button>
+        {isNext && (
+          <div className="hidden sm:flex flex-col items-center pt-1 shrink-0">
+            <div className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />
+            <div className="w-px h-8 bg-primary/25 mt-1" />
+          </div>
+        )}
 
-      {/* ── Timing columns ── */}
-      {showDuration && (
-        <div className="shrink-0 w-12 text-right">
-          <div className="text-xs font-mono font-medium text-muted-foreground">
-            {formatDuration(songDuration)}
+        <button
+          className="flex-1 min-w-0 text-left"
+          onClick={hasPdf ? onViewSheet : onViewCard}
+          title={hasPdf ? "Open sheet music" : "Open song details"}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            {isNext && (
+              <Badge className="bg-primary text-primary-foreground text-[10px] px-2 py-0.5 uppercase tracking-wide">Next</Badge>
+            )}
+            <span className={`font-display font-bold italic leading-tight ${isNext ? "text-lg sm:text-xl" : "text-base sm:text-[17px]"} ${status === "skipped" ? "line-through" : ""}`}>
+              {song.title}
+            </span>
+            {song.capo && song.capo !== "No capo" && <Badge className="capo-badge text-[11px] shrink-0">{song.capo}</Badge>}
+            {hasPdf && <Badge variant="outline" className="text-[10px] gap-1"><FileText className="w-3 h-3" />PDF</Badge>}
           </div>
-        </div>
-      )}
-      {showCumulative && (
-        <div className="shrink-0 w-14 text-right">
-          <div className="text-xs font-mono font-medium text-primary/80">
-            {formatDuration(cumulativeTime)}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>{song.artist}</span>
+            <span>·</span>
+            <span className="font-semibold text-foreground/70">{song.key.split("(")[0].trim()}</span>
+            {!focusMode && showDuration && <span>· {formatDuration(songDuration)}</span>}
+            {!focusMode && showCumulative && <span>· total {formatDuration(cumulativeTime)}</span>}
+            {!focusMode && showClock && clockLabel && <span className="text-amber-600 dark:text-amber-400">· {clockLabel}</span>}
           </div>
-        </div>
-      )}
-      {showClock && clockTime && (
-        <div className="shrink-0 w-14 text-right">
-          <div className="text-xs font-mono font-medium text-amber-600 dark:text-amber-400">
-            {clockTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-          </div>
-        </div>
-      )}
+        </button>
 
-      <div className="flex items-center gap-1 shrink-0">
-        {/* Info icon — always opens song card */}
-        <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-foreground" onClick={onViewCard} title="Song details">
-          <Info className="w-3.5 h-3.5" />
+        {!focusMode && (
+          <div className="hidden md:grid grid-cols-3 gap-1 shrink-0 pt-1 min-w-[132px]">
+            {showDuration && <div className="text-right text-xs font-mono text-muted-foreground">{formatDuration(songDuration)}</div>}
+            {showCumulative && <div className="text-right text-xs font-mono text-primary/80">{formatDuration(cumulativeTime)}</div>}
+            {showClock && clockLabel && <div className="text-right text-xs font-mono text-amber-600 dark:text-amber-400">{clockLabel}</div>}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-7">
+        <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onViewCard} title="Song details">
+          <Info className="w-4 h-4" /> <span className="hidden sm:inline">Details</span>
         </Button>
-        <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-foreground" onClick={onAddNote} title="Add performance note">
-          <ClipboardList className="w-3.5 h-3.5" />
+        <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onAddNote} title="Performance note">
+          <ClipboardList className="w-4 h-4" /> <span className="hidden sm:inline">Note</span>
         </Button>
-        {status !== "pending" ? (
-          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onUndo} title="Undo">
-            <RotateCcw className="w-3.5 h-3.5" />
+        {hasPdf && (
+          <Button variant="outline" size="sm" className="h-10 min-w-10 px-3 gap-1.5 text-xs" onClick={onViewSheet} title="Open PDF">
+            <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Sheet</span>
+          </Button>
+        )}
+        <div className="flex-1" />
+        {isDone ? (
+          <Button variant="outline" size="sm" className="h-10 px-3 gap-1.5 text-xs" onClick={onUndo} title="Undo">
+            <RotateCcw className="w-4 h-4" /> Undo
           </Button>
         ) : (
           <>
-            <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground" onClick={onMarkSkipped} title="Skip">
-              <SkipForward className="w-3.5 h-3.5" />
+            <Button variant="outline" size="sm" className="h-10 px-3 gap-1.5 text-xs text-muted-foreground" onClick={onMarkSkipped} title="Skip">
+              <SkipForward className="w-4 h-4" /> Skip
             </Button>
-            <Button variant="ghost" size="icon" className="w-7 h-7 text-green-600 dark:text-green-400" onClick={onMarkPlayed} title="Mark played">
-              <CheckCircle2 className="w-4 h-4" />
+            <Button size="sm" className="h-10 px-4 gap-1.5 text-xs font-semibold" onClick={onMarkPlayed} title="Mark played">
+              <CheckCircle2 className="w-4 h-4" /> Done
             </Button>
           </>
         )}
@@ -685,6 +698,7 @@ export default function StagePage() {
   const [requestScopeId, setRequestScopeId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [noteModalSong, setNoteModalSong] = useState<Song | null>(null);
   const [sheetSong, setSheetSong] = useState<Song | null>(null);
   const [fullscreenPdfSong, setFullscreenPdfSong] = useState<Song | null>(null);
@@ -1033,6 +1047,15 @@ export default function StagePage() {
           <Button variant="outline" size="sm" onClick={() => setShowEditSetlist(true)} className="gap-1.5">
             <Pencil className="w-3.5 h-3.5" /> Edit Set
           </Button>
+          <Button
+            variant={focusMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFocusMode((p) => !p)}
+            className="gap-1.5"
+            title="Toggle larger, lower-distraction stage rows"
+          >
+            <Music2 className="w-3.5 h-3.5" /> Focus
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setGlanceMode(true)} className="gap-1.5">
             <Maximize2 className="w-3.5 h-3.5" /> At-a-Glance
           </Button>
@@ -1044,21 +1067,38 @@ export default function StagePage() {
 
       {/* Next up highlight */}
       {nextSong && (
-        <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 mb-5 flex items-center gap-4">
-          <div className="flex-1">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">Next Up</div>
-            <div className="font-display font-bold text-lg italic">{nextSong.title}</div>
-            <div className="text-sm text-muted-foreground">{nextSong.artist} · {nextSong.key.split("(")[0].trim()}</div>
+        <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent border border-primary/35 rounded-2xl p-4 sm:p-5 mb-5 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mb-1">Next Up</div>
+              <div className="font-display font-bold text-2xl sm:text-3xl italic leading-tight">{nextSong.title}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                <span>{nextSong.artist}</span>
+                <span>·</span>
+                <span className="font-semibold text-foreground/75">{nextSong.key.split("(")[0].trim()}</span>
+                {nextSong.duration && <span>· {formatDurationLong(nextSong.duration)}</span>}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {nextSong.capo && nextSong.capo !== "No capo" && <Badge className="capo-badge text-sm px-3 py-1">{nextSong.capo}</Badge>}
+              {!!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl) && (
+                <Button size="lg" variant="outline" onClick={() => setFullscreenPdfSong(nextSong)} className="h-11 gap-1.5">
+                  <FileText className="w-4 h-4" /> Sheet
+                </Button>
+              )}
+              <Button size="lg" variant="outline" onClick={() => markSkipped(nextSong.id)} className="h-11 gap-1.5">
+                <SkipForward className="w-4 h-4" /> Skip
+              </Button>
+              <Button size="lg" onClick={() => markPlayed(nextSong.id)} className="h-11 gap-1.5 font-semibold">
+                <CheckCircle2 className="w-4 h-4" /> Done
+              </Button>
+            </div>
           </div>
-          {nextSong.capo && nextSong.capo !== "No capo" && <Badge className="capo-badge text-sm px-3 py-1">{nextSong.capo}</Badge>}
-          <Button size="sm" onClick={() => markPlayed(nextSong.id)} className="gap-1.5">
-            <CheckCircle2 className="w-4 h-4" /> Done
-          </Button>
         </div>
       )}
 
       {/* Column visibility toggles + column headers */}
-      <div className="mb-2 space-y-1.5">
+      {!focusMode && <div className="mb-2 space-y-1.5">
         {/* Toggle pill row */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">Columns:</span>
@@ -1099,7 +1139,13 @@ export default function StagePage() {
             <span className="w-[108px] shrink-0" />{/* action buttons placeholder */}
           </div>
         )}
-      </div>
+      </div>}
+
+      {focusMode && (
+        <div className="mb-3 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-muted-foreground">
+          Focus mode is on: rows are larger and timing columns are tucked into each song.
+        </div>
+      )}
 
       {/* Full set list */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1134,6 +1180,7 @@ export default function StagePage() {
                   showDuration={colPrefs.showDuration}
                   showCumulative={colPrefs.showCumulative}
                   showClock={colPrefs.showClock}
+                  focusMode={focusMode}
                 />
               );
             })}

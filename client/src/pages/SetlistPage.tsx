@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
-  Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag, Link2,
+  Plus, GripVertical, X, Trash2, Mic2, Search, Calendar, MapPin, ChevronDown, ChevronUp, Pencil, RefreshCw, Wifi, Clock, Coffee, Flag, Link2, Copy,
 } from "lucide-react";
 
 // ─── Helpers: map Supabase rows ↔ local types ─────────────
@@ -279,7 +279,7 @@ function RuntimeTimeline({ songs }: { songs: Song[] }) {
 // ─── Setlist Card ─────────────────────────────────────────
 
 function SetlistCard({
-  setlist, songs, venues, onDelete, onLoad, onEdit, onCopyAudienceLink,
+  setlist, songs, venues, onDelete, onLoad, onEdit, onDuplicate, onCopyAudienceLink,
 }: {
   setlist: Setlist;
   songs: Song[];
@@ -287,6 +287,7 @@ function SetlistCard({
   onDelete: () => void;
   onLoad: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onCopyAudienceLink: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -334,6 +335,9 @@ function SetlistCard({
             </Button>
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onEdit} title="Edit setlist">
               <Pencil className="w-3.5 h-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="w-8 h-8" onClick={onDuplicate} title="Duplicate setlist">
+              <Copy className="w-3.5 h-3.5" />
             </Button>
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => setExpanded((p) => !p)}>
               {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -609,6 +613,33 @@ export default function SetlistPage() {
     }
   };
 
+  const duplicateSetlist = async (setlist: Setlist) => {
+    setSyncing(true);
+    const now = new Date().toISOString();
+    const newSl: SbSetlist = {
+      id: uid(),
+      user_id: getDeviceId(),
+      name: `${setlist.name} Copy`,
+      gig_date: setlist.gigDate ?? null,
+      gig_start_time: setlist.gigStartTime ?? null,
+      venue_id: setlist.venueId ?? null,
+      song_ids: [...setlist.songIds],
+      created_at: now,
+      audience_slug: generateAudienceSlug(),
+      requests_enabled: true,
+    };
+    try {
+      await sbSetlists.save(newSl);
+      setSetlists((prev) => [sbToSetlist(newSl), ...prev]);
+      toast({ title: "Setlist duplicated", description: `${setlist.name} Copy` });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Duplicate failed", description: "Could not create a copy in the cloud.", variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const copyAudienceLink = async (setlist: Setlist) => {
     const url = audienceUrlForSetlist(setlist);
     try {
@@ -679,6 +710,7 @@ export default function SetlistPage() {
               onDelete={() => deleteSetlist(sl.id)}
               onLoad={() => loadSetlist(sl)}
               onEdit={() => openEdit(sl)}
+              onDuplicate={() => duplicateSetlist(sl)}
               onCopyAudienceLink={() => copyAudienceLink(sl)}
             />
           ))}
