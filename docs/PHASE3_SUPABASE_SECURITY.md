@@ -18,6 +18,7 @@ Open Supabase → SQL Editor and run these migrations in order:
 ```sql
 supabase/migrations/20260528_phase3_gig_scoped_requests.sql
 supabase/migrations/20260528_phase4_cloud_songs_cleanup.sql
+supabase/migrations/20260528_phase4_2_cleanup_reliability.sql
 ```
 
 After applying the migration, redeploy the app and retest:
@@ -53,4 +54,4 @@ Before a paid/public release, add:
 - private PDF storage with signed URLs
 - public audience tokens that can only insert requests for one active gig
 - rate limiting or one-request-per-device behavior
-- audit/backup/export support
+- restore/import workflows for backups, after the export format has been used successfully

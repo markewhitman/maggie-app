@@ -1,6 +1,7 @@
 // ============================================================
 // Maggie App — Static Data Layer
-// All persistence via localStorage. No backend required.
+// Built-in catalogue, shared types, and legacy local preference stores.
+// Cloud-backed records live in client/src/lib/supabase.ts.
 // ============================================================
 
 // ─── Types ────────────────────────────────────────────────
@@ -32,7 +33,7 @@ export interface Song {
   setPosition: number;
   duration?: number;      // song duration in seconds (editable, used for runtime calculations)
   pdfUrl?: string;        // Cloud PDF URL (currently Supabase Storage public URL)
-  pdfAssetId?: number;    // Legacy GitHub asset ID, retained only for older localStorage records
+  pdfAssetId?: number;    // Legacy asset ID, retained only for older localStorage records
   pdfFilename?: string;   // original filename
   userAdded?: boolean;    // true if user created this song
 }

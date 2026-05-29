@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
@@ -9,7 +9,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { SEED_SONGS, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
 import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, sbSongs, type SbRequest, type SbPerfNote } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
-import { FullscreenPdfViewer } from "@/components/FullscreenPdfViewer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +23,10 @@ import {
   Maximize2, ClipboardList, X, Pencil, Plus, Search, FileText, Bell,
   ThumbsUp, ThumbsDown, Shuffle, Info, Music2, Clock,
 } from "lucide-react";
+
+const FullscreenPdfViewer = lazy(() =>
+  import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
+);
 
 // ─── Session type ─────────────────────────────────────────
 
@@ -1168,11 +1171,13 @@ export default function StagePage() {
       {fullscreenPdfSong && (() => {
         const url = pdfMap[fullscreenPdfSong.id]?.url ?? fullscreenPdfSong.pdfUrl;
         return url ? (
-          <FullscreenPdfViewer
-            pdfUrl={url}
-            songTitle={fullscreenPdfSong.title}
-            onClose={() => setFullscreenPdfSong(null)}
-          />
+          <Suspense fallback={null}>
+            <FullscreenPdfViewer
+              pdfUrl={url}
+              songTitle={fullscreenPdfSong.title}
+              onClose={() => setFullscreenPdfSong(null)}
+            />
+          </Suspense>
         ) : null;
       })()}
 

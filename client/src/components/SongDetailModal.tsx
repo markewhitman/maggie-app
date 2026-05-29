@@ -1,7 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
+import { Suspense, lazy, useState, useRef, useCallback, useEffect } from "react";
 import type { Song, PerformanceNote } from "@/lib/data";
 import { formatDuration } from "@/lib/data";
 import { sbPdfs, sbSongPdfs, sbPerfNotes, sbSongs, type SbPerfNote } from "@/lib/supabase";
@@ -20,10 +17,10 @@ import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
   Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2
 } from "lucide-react";
-import { FullscreenPdfViewer } from "@/components/FullscreenPdfViewer";
-
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+const FullscreenPdfViewer = lazy(() =>
+  import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
+);
+const PdfPreview = lazy(() => import("@/components/PdfPreview"));
 
 interface Props {
   song: Song;
@@ -433,12 +430,14 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
 
             {/* Fullscreen overlay — rendered outside the Dialog so it covers everything */}
             {fullscreenPdf && song.pdfUrl && (
-              <FullscreenPdfViewer
-                pdfUrl={song.pdfUrl}
-                songTitle={song.title}
-                onClose={() => setFullscreenPdf(false)}
-                initialPage={pageNumber}
-              />
+              <Suspense fallback={null}>
+                <FullscreenPdfViewer
+                  pdfUrl={song.pdfUrl}
+                  songTitle={song.title}
+                  onClose={() => setFullscreenPdf(false)}
+                  initialPage={pageNumber}
+                />
+              </Suspense>
             )}
 
             {song.pdfUrl ? (
@@ -512,20 +511,15 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center z-10">
                           <Maximize2 className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 drop-shadow-lg transition-opacity" />
                         </div>
-                        <Document
-                          file={song.pdfUrl}
-                          onLoadSuccess={({ numPages: n }) => { setNumPages(n); setPdfLoading(false); }}
-                          onLoadError={(err) => { setPdfError("Could not load preview. " + err.message); setPdfLoading(false); }}
-                          loading=""
-                          className="w-full"
-                        >
-                          <Page
+                        <Suspense fallback={<div className="h-[200px] flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}>
+                          <PdfPreview
+                            pdfUrl={song.pdfUrl}
                             pageNumber={pageNumber}
                             width={320}
-                            className="mx-auto pointer-events-none"
-                            loading={<div className="h-[200px]" />}
+                            onLoadSuccess={(n) => { setNumPages(n); setPdfLoading(false); }}
+                            onLoadError={(message) => { setPdfError("Could not load preview. " + message); setPdfLoading(false); }}
                           />
-                        </Document>
+                        </Suspense>
                       </>
                     )}
                   </div>

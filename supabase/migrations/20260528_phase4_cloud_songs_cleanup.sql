@@ -24,7 +24,7 @@ create table if not exists public.songs (
   decade text,
   energy text,
   vocal_style text,
-  similar text[],
+  "similar" text[],
   difficulty text not null default 'Intermediate',
   tags text[] not null default '{}',
   performance_note text not null default '',
@@ -96,3 +96,7 @@ create policy "Personal app can delete songs"
   for delete
   to anon
   using (true);
+
+-- Table privileges required for browser anon-key access. RLS still controls row visibility/mutation.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.songs to anon, authenticated;

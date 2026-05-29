@@ -16,7 +16,8 @@ This guide reflects the current app architecture: the frontend is hosted on GitH
 | Audience requests | Supabase `song_requests` and `request_log` tables |
 | PDF files | Supabase Storage `pdfs` bucket |
 | Song-to-PDF mapping | Supabase `song_pdfs` table |
-| Seed songs and user-added songs | Browser `localStorage` for now |
+| Built-in seed songs | Frontend bundle, with Supabase overrides/tombstones |
+| User-added songs and song edits | Supabase `songs` table |
 | Performance notes | Supabase `perf_notes` table in Stage and song history views |
 
 The app currently uses a shared single-user Supabase identity in `client/src/lib/supabase.ts`. That is suitable for a private personal app only. A commercial release needs authentication, per-user tenancy, RLS policies, and private/scoped audience routes.
@@ -132,13 +133,31 @@ Apply these migrations before relying on the current cloud-sync behavior:
 ```text
 supabase/migrations/20260528_phase3_gig_scoped_requests.sql
 supabase/migrations/20260528_phase4_cloud_songs_cleanup.sql
+supabase/migrations/20260528_phase4_2_cleanup_reliability.sql
 ```
 
 See `docs/PHASE3_SUPABASE_SECURITY.md` for the remaining personal-MVP versus commercial security gap.
 
 ---
 
-## 7. PDF storage
+## 7. Backup/export
+
+Settings includes **Backup & Export**, which downloads a JSON file containing:
+
+- song metadata and synced song overrides
+- setlists
+- venues
+- active stage session
+- performance notes
+- pending/request history metadata
+- song-to-PDF URL mappings
+- local app preferences
+
+The backup contains PDF URLs, not PDF file binaries. Supabase Storage remains the source of truth for uploaded PDFs.
+
+---
+
+## 8. PDF storage
 
 New PDF uploads from both the song detail modal and add-song modal now use Supabase:
 
@@ -146,7 +165,7 @@ New PDF uploads from both the song detail modal and add-song modal now use Supab
 2. Save the public URL and original name in `song_pdfs`.
 3. Save/update the synced song record so the PDF is visible across devices.
 
-The legacy GitHub Release Asset/PAT workflow has been removed from the client code.
+The legacy GitHub Release Asset/PAT workflow has been removed from the client code. The fullscreen PDF viewer and PDF preview are lazy-loaded so the initial app bundle is smaller; PDF code downloads only when sheet music is opened.
 
 ---
 
@@ -156,6 +175,7 @@ These are intentional current-state notes, not deployment steps:
 
 - User-added songs and edited seed-song overrides now sync through Supabase after the Phase 4 migration is applied.
 - The first app load after deploying Phase 4 migrates any existing local user-added songs into Supabase.
+- Phase 4.2 adds the missing `songs` table grants to the migration history, adds JSON backup/export, and lazy-loads PDF rendering.
 - Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.

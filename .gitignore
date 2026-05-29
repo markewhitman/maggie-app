@@ -14,3 +14,7 @@ data.db-journal
 
 *.log
 .DS_Store
+
+# Uploaded sheet music belongs in Supabase Storage, not Git.
+Music/*.pdf
+Music/**/*.pdf

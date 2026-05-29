@@ -1,6 +1,30 @@
-import { Github, CheckCircle2, Wifi, FileText, Database } from "lucide-react";
+import { useState } from "react";
+import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { createMaggieBackup, downloadBackup } from "@/lib/backup";
 
 export default function SettingsPage() {
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
+
+  const handleExportBackup = async () => {
+    setExporting(true);
+    try {
+      const backup = await createMaggieBackup();
+      const filename = downloadBackup(backup);
+      toast({ title: "Backup exported", description: filename });
+    } catch (err: any) {
+      toast({
+        title: "Backup failed",
+        description: err?.message ?? "Could not export your Maggie backup.",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="max-w-lg">
       <div className="mb-6">
@@ -45,6 +69,25 @@ export default function SettingsPage() {
         <p className="text-xs text-muted-foreground leading-relaxed">
           All devices — phone, laptop, tablet — share the same data automatically. Refresh any page to pull the latest from the cloud.
         </p>
+      </div>
+
+
+      {/* Backup / export */}
+      <div className="bg-card border border-border rounded-xl p-5 mt-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="w-5 h-5 text-primary" />
+          <div>
+            <div className="font-semibold text-sm">Backup &amp; Export</div>
+            <div className="text-xs text-muted-foreground">Download a JSON backup of songs, setlists, venues, notes, requests, and PDF links</div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          This creates a portable backup file for safekeeping. It includes song metadata and public PDF URLs, but not the PDF files themselves.
+        </p>
+        <Button onClick={handleExportBackup} disabled={exporting} className="gap-1.5">
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {exporting ? "Exporting…" : "Export Backup"}
+        </Button>
       </div>
 
       {/* Database info */}
