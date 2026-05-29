@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { QRCodeSVG as QRCode } from "qrcode.react";
 import { SEED_SONGS, type Song } from "@/lib/data";
-import { sbRequests, sbSession, sbSongs } from "@/lib/supabase";
+import { sbRequests, sbSession, sbSongs, sbSetlists, type SbSetlist } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Music, Heart, Check, ChevronDown, ChevronUp, SlidersHorizontal, X, PenLine, Plus } from "lucide-react";
+import { Search, Music, Heart, Check, ChevronDown, ChevronUp, SlidersHorizontal, X, PenLine, Plus, Calendar, Clock, ListMusic, QrCode } from "lucide-react";
 
 // ─── Filter config ─────────────────────────────────────────
 
@@ -207,6 +207,16 @@ function buildAudienceUrl(gigId: string): string {
   return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(gigId)}`;
 }
 
+function formatAudienceStart(time?: string | null): string | null {
+  if (!time) return null;
+  const [hRaw, mRaw] = time.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const ap = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
+}
+
 // ─── Main Page ────────────────────────────────────────────
 
 export default function AudiencePage() {
@@ -218,6 +228,9 @@ export default function AudiencePage() {
   }, [location]);
   const [activeGigId, setActiveGigId] = useState<string | null>(routeGigId);
   const effectiveGigId = routeGigId ?? activeGigId;
+  const [targetSetlist, setTargetSetlist] = useState<SbSetlist | null>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<"set" | "all">("all");
   const [search, setSearch] = useState("");
   const [requests, setRequests] = useState<Request[]>([]);
   const [submittingIds, setSubmittingIds] = useState<Set<string>>(new Set());
@@ -246,9 +259,38 @@ export default function AudiencePage() {
       .catch(() => setActiveGigId(null));
   }, [routeGigId]);
 
+  useEffect(() => {
+    if (!effectiveGigId) {
+      setTargetSetlist(null);
+      setLibraryMode("all");
+      return;
+    }
+
+    setTargetLoading(true);
+    sbSetlists
+      .getByAudienceScope(effectiveGigId)
+      .then((setlist) => {
+        setTargetSetlist(setlist);
+        setLibraryMode(setlist?.song_ids?.length ? "set" : "all");
+      })
+      .catch(() => {
+        setTargetSetlist(null);
+        setLibraryMode("all");
+      })
+      .finally(() => setTargetLoading(false));
+  }, [effectiveGigId]);
+
+  const sourceSongs = useMemo(() => {
+    if (libraryMode !== "set" || !targetSetlist?.song_ids?.length) return songs;
+    const byId = new Map(songs.map((song) => [song.id, song]));
+    return targetSetlist.song_ids
+      .map((id) => byId.get(id))
+      .filter(Boolean) as Song[];
+  }, [songs, targetSetlist, libraryMode]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return songs.filter((s) => {
+    return sourceSongs.filter((s) => {
       const matchSearch =
         !q ||
         s.title.toLowerCase().includes(q) ||
@@ -272,7 +314,7 @@ export default function AudiencePage() {
 
       return matchSearch && matchGenre && matchMood && matchDecade && matchEnergy && matchVocal;
     });
-  }, [songs, search, activeFilters]);
+  }, [sourceSongs, search, activeFilters]);
 
   const requestSong = async (song: Song) => {
     const alreadyRequested = requests.some((r) => r.songId === song.id);
@@ -374,7 +416,7 @@ export default function AudiencePage() {
               )}
             </Button>
             <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => setShowQR((p) => !p)}>
-              {showQR ? "Hide QR" : "Share QR"}
+              <QrCode className="w-3.5 h-3.5" /> {showQR ? "Hide" : "QR"}
             </Button>
           </div>
         </div>
@@ -384,19 +426,77 @@ export default function AudiencePage() {
         {/* QR code */}
         {showQR && (
           <div className="flex flex-col items-center py-6 mb-4 bg-card border border-border rounded-xl">
-            <QRCode value={qrUrl} size={180} />
-            <p className="text-xs text-muted-foreground mt-3 text-center">
-              Scan to open on your phone and request songs
+            <QRCode value={qrUrl} size={190} />
+            <p className="text-xs text-muted-foreground mt-3 text-center px-6">
+              Scan to open this same request page{targetSetlist ? ` for ${targetSetlist.name}` : ""}.
             </p>
           </div>
         )}
+
+        {/* Request target */}
+        <div className="rounded-2xl border border-primary/25 bg-primary/10 px-4 py-3 mb-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+              <ListMusic className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                You are requesting for
+              </div>
+              <div className="font-display font-bold italic text-xl leading-tight mt-0.5">
+                {targetLoading
+                  ? "Loading set…"
+                  : targetSetlist?.name ?? (effectiveGigId ? "This linked set" : "General request queue")}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {targetSetlist?.gig_date && (
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> {targetSetlist.gig_date}
+                  </span>
+                )}
+                {formatAudienceStart(targetSetlist?.gig_start_time) && (
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" /> Starts {formatAudienceStart(targetSetlist?.gig_start_time)}
+                  </span>
+                )}
+                {targetSetlist?.song_ids?.length ? (
+                  <span>{targetSetlist.song_ids.length} songs in this set</span>
+                ) : effectiveGigId ? (
+                  <span>Requests are still linked to this audience QR.</span>
+                ) : (
+                  <span>Ask the artist for tonight’s QR to target a specific set.</span>
+                )}
+              </div>
+            </div>
+          </div>
+          {targetSetlist?.song_ids?.length ? (
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-background/70 border border-border p-1">
+              <button
+                type="button"
+                onClick={() => setLibraryMode("set")}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${libraryMode === "set" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Tonight’s set
+              </button>
+              <button
+                type="button"
+                onClick={() => setLibraryMode("all")}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${libraryMode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                All songs
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         {/* Welcome */}
         <div className="text-center py-3 mb-3">
           <h1 className="font-display font-bold text-2xl italic text-primary mb-1">Request a Song</h1>
           <p className="text-sm text-muted-foreground">Use the Request button to send a song straight to the stage queue.</p>
           {effectiveGigId ? (
-            <p className="text-[11px] text-muted-foreground/70 mt-1">Requests are linked to tonight’s active set.</p>
+            <p className="text-[11px] text-muted-foreground/70 mt-1">
+              Every request from this page is sent to the set shown above.
+            </p>
           ) : (
             <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">No active set detected — requests may go to the general queue.</p>
           )}
@@ -519,7 +619,7 @@ export default function AudiencePage() {
         {/* Results count */}
         {(activeCount > 0) && (
           <p className="text-xs text-muted-foreground mb-2">
-            {filtered.length} of {songs.length} songs
+            {filtered.length} of {sourceSongs.length} songs
           </p>
         )}
 
@@ -529,6 +629,9 @@ export default function AudiencePage() {
             <div className="text-center py-10 text-muted-foreground">
               <Music className="w-8 h-8 mx-auto mb-2 opacity-40" />
               <p className="text-sm">No songs match these filters</p>
+              {libraryMode === "set" && (
+                <p className="text-xs mt-1">Try All songs, or clear filters.</p>
+              )}
               <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={clearFilters}>
                 Clear filters
               </Button>
@@ -548,7 +651,7 @@ export default function AudiencePage() {
 
         {/* Footer */}
         <div className="text-center py-8 text-xs text-muted-foreground">
-          {songs.length} songs available · requests go straight to Maggie
+          {sourceSongs.length} songs available · requests go straight to Maggie
         </div>
       </div>
     </div>

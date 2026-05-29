@@ -350,6 +350,22 @@ export const sbSetlists = {
     return (data as SbSetlist | null) ?? null;
   },
 
+  async getByAudienceScope(scope: string): Promise<SbSetlist | null> {
+    const userId = getDeviceId();
+
+    const bySlug = await supabase
+      .from("setlists")
+      .select("*")
+      .eq("audience_slug", scope)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!bySlug.error && bySlug.data) return bySlug.data as SbSetlist;
+    if (bySlug.error && !isMissingColumnError(bySlug.error)) throw bySlug.error;
+
+    return this.getById(scope);
+  },
+
   async save(setlist: Omit<SbSetlist, "user_id">): Promise<void> {
     const userId = getDeviceId();
     const payload = {

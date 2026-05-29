@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
+import { AudienceShareDialog } from "@/components/AudienceShareDialog";
 import {
   Plus,
   GripVertical,
@@ -72,7 +73,7 @@ import {
   Clock,
   Coffee,
   Flag,
-  Link2,
+  QrCode,
   Copy,
   AlertTriangle,
 } from "lucide-react";
@@ -414,7 +415,7 @@ function SetlistCard({
   onLoad,
   onEdit,
   onDuplicate,
-  onCopyAudienceLink,
+  onShowAudienceLink,
 }: {
   setlist: Setlist;
   songs: Song[];
@@ -423,7 +424,7 @@ function SetlistCard({
   onLoad: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
-  onCopyAudienceLink: () => void;
+  onShowAudienceLink: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const venue = venues.find((v) => v.id === setlist.venueId);
@@ -498,11 +499,11 @@ function SetlistCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={onCopyAudienceLink}
+              onClick={onShowAudienceLink}
               className="gap-1.5 text-xs h-8"
-              title="Copy audience request link"
+              title="Show audience QR and request link"
             >
-              <Link2 className="w-3.5 h-3.5" /> Audience Link
+              <QrCode className="w-3.5 h-3.5" /> Audience QR
             </Button>
             <Button
               variant="ghost"
@@ -596,6 +597,7 @@ export default function SetlistPage() {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [shareSetlist, setShareSetlist] = useState<Setlist | null>(null);
 
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingSetlistId, setEditingSetlistId] = useState<string | null>(null);
@@ -944,20 +946,8 @@ export default function SetlistPage() {
     }
   };
 
-  const copyAudienceLink = async (setlist: Setlist) => {
-    const url = audienceUrlForSetlist(setlist);
-    try {
-      await navigator.clipboard.writeText(url);
-      toast({
-        title: "Audience link copied",
-        description: "Share this QR/link for this specific gig.",
-      });
-    } catch {
-      toast({
-        title: "Audience link",
-        description: url,
-      });
-    }
+  const showAudienceLink = (setlist: Setlist) => {
+    setShareSetlist(setlist);
   };
 
   // ─── Render ───────────────────────────────────────────────
@@ -1045,13 +1035,27 @@ export default function SetlistPage() {
               onLoad={() => loadSetlist(sl)}
               onEdit={() => openEdit(sl)}
               onDuplicate={() => duplicateSetlist(sl)}
-              onCopyAudienceLink={() => copyAudienceLink(sl)}
+              onShowAudienceLink={() => showAudienceLink(sl)}
             />
           ))}
         </div>
       )}
 
       {ConfirmDialog}
+
+      {shareSetlist && (
+        <AudienceShareDialog
+          open={!!shareSetlist}
+          onClose={() => setShareSetlist(null)}
+          url={audienceUrlForSetlist(shareSetlist)}
+          setlistName={shareSetlist.name}
+          subtitle={[shareSetlist.gigDate, shareSetlist.gigStartTime ? `Starts ${shareSetlist.gigStartTime}` : null]
+            .filter(Boolean)
+            .join(" · ")}
+          songCount={shareSetlist.songIds.length}
+          source="setlist"
+        />
+      )}
 
       {/* Builder Dialog */}
       <Dialog

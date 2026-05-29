@@ -35,8 +35,10 @@ import {
   requestScopeForSetlist,
   type SbRequest,
   type SbPerfNote,
+  type SbSetlist,
 } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
+import { AudienceShareDialog } from "@/components/AudienceShareDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,6 +79,11 @@ import {
   Info,
   Music2,
   Clock,
+  QrCode,
+  ListMusic,
+  Timer,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 
 const FullscreenPdfViewer = lazy(() =>
@@ -127,6 +134,11 @@ function formatStageStart(time: string): string | null {
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   const ap = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
+}
+
+function audienceUrlForScope(scope: string): string {
+  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(scope)}`;
+  return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(scope)}`;
 }
 
 function perfNoteToSb(note: PerformanceNote): Omit<SbPerfNote, "user_id"> {
@@ -827,6 +839,231 @@ function GlanceView({
   );
 }
 
+
+// ─── Performance Mode ────────────────────────────────────
+
+function PerformanceModeView({
+  currentSong,
+  upcoming,
+  orderedSongs,
+  playedIds,
+  skippedIds,
+  requestsCount,
+  timePlayed,
+  timeRemaining,
+  projectedEndLabel,
+  stageStartLabel,
+  hasPdf,
+  onClose,
+  onOpenSheet,
+  onAddNote,
+  onMarkPlayed,
+  onMarkSkipped,
+  onUndo,
+  onOpenRequests,
+}: {
+  currentSong: Song | null;
+  upcoming: Song[];
+  orderedSongs: Song[];
+  playedIds: string[];
+  skippedIds: string[];
+  requestsCount: number;
+  timePlayed: number;
+  timeRemaining: number;
+  projectedEndLabel: string | null;
+  stageStartLabel: string | null;
+  hasPdf: boolean;
+  onClose: () => void;
+  onOpenSheet: () => void;
+  onAddNote: () => void;
+  onMarkPlayed: () => void;
+  onMarkSkipped: () => void;
+  onUndo: (songId: string) => void;
+  onOpenRequests: () => void;
+}) {
+  const [showFullSet, setShowFullSet] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentStatus = currentSong
+    ? playedIds.includes(currentSong.id)
+      ? "played"
+      : skippedIds.includes(currentSong.id)
+        ? "skipped"
+        : "pending"
+    : "pending";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+            Performance Mode
+          </div>
+          <div className="font-mono text-xl font-extrabold leading-tight">
+            {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onOpenRequests} className="gap-1.5 relative h-10">
+            <Bell className="w-4 h-4" /> Requests
+            {requestsCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground rounded-full w-5 h-5 text-[11px] flex items-center justify-center font-bold">
+                {requestsCount}
+              </span>
+            )}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowFullSet((p) => !p)} className="gap-1.5 h-10">
+            <ListMusic className="w-4 h-4" /> Set
+            {showFullSet ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-10">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {currentSong ? (
+          <div className="mx-auto max-w-5xl space-y-4">
+            <div className="rounded-3xl border border-primary/35 bg-gradient-to-br from-primary/18 via-primary/8 to-transparent p-5 sm:p-8 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground mb-2">
+                Current / Next Song
+              </div>
+              <h2 className="font-display text-4xl sm:text-6xl font-black italic leading-none tracking-tight">
+                {currentSong.title}
+              </h2>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-base sm:text-lg text-muted-foreground">
+                <span>{currentSong.artist}</span>
+                <span>·</span>
+                <span className="font-bold text-foreground/80">{currentSong.key.split("(")[0].trim()}</span>
+                {currentSong.capo && currentSong.capo !== "No capo" && (
+                  <Badge className="capo-badge text-base px-4 py-1">{currentSong.capo}</Badge>
+                )}
+              </div>
+
+              {currentSong.chords && (
+                <div className="mt-5 rounded-2xl border border-border/70 bg-background/70 px-4 py-3">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Chords</div>
+                  <div className="font-mono text-lg sm:text-2xl font-bold leading-relaxed break-words">
+                    {currentSong.chords}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="stage-timing-tile">
+                  <span className="stage-timing-label">Played</span>
+                  <span className="stage-timing-value text-lg">{formatDuration(timePlayed)}</span>
+                </div>
+                <div className="stage-timing-tile">
+                  <span className="stage-timing-label">Remaining</span>
+                  <span className="stage-timing-value text-lg">{formatDuration(timeRemaining)}</span>
+                </div>
+                <div className="stage-timing-tile">
+                  <span className="stage-timing-label">Set start</span>
+                  <span className="stage-timing-value text-lg">{stageStartLabel ?? "—"}</span>
+                </div>
+                <div className="stage-timing-tile border-primary/35 bg-primary/10">
+                  <span className="stage-timing-label">Projected end</span>
+                  <span className="stage-timing-value text-lg">{projectedEndLabel ?? "—"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <Button size="lg" variant="outline" onClick={onOpenSheet} disabled={!hasPdf} className="h-14 gap-2 text-base">
+                <FileText className="w-5 h-5" /> Sheet
+              </Button>
+              <Button size="lg" variant="outline" onClick={onAddNote} className="h-14 gap-2 text-base">
+                <ClipboardList className="w-5 h-5" /> Note
+              </Button>
+              {currentStatus !== "pending" ? (
+                <Button size="lg" variant="outline" onClick={() => onUndo(currentSong.id)} className="h-14 gap-2 text-base">
+                  <RotateCcw className="w-5 h-5" /> Undo
+                </Button>
+              ) : (
+                <Button size="lg" variant="outline" onClick={onMarkSkipped} className="h-14 gap-2 text-base">
+                  <SkipForward className="w-5 h-5" /> Skip
+                </Button>
+              )}
+              <Button size="lg" onClick={onMarkPlayed} className="h-14 gap-2 text-base font-bold" disabled={currentStatus !== "pending"}>
+                <CheckCircle2 className="w-5 h-5" /> Done
+              </Button>
+            </div>
+
+            {upcoming.slice(1, 4).length > 0 && (
+              <div className="rounded-2xl border border-border bg-card px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-2">Coming up</div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {upcoming.slice(1, 4).map((song, i) => (
+                    <div key={song.id} className="rounded-xl bg-muted/45 px-3 py-2">
+                      <div className="text-[10px] text-muted-foreground">Next +{i + 1}</div>
+                      <div className="font-semibold truncate">{song.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {showFullSet && (
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">Full set fallback</div>
+                    <div className="text-xs text-muted-foreground">Use this if you need to jump around quickly.</div>
+                  </div>
+                </div>
+                <div className="max-h-[42vh] overflow-y-auto divide-y divide-border/60">
+                  {orderedSongs.map((song, index) => {
+                    const status = playedIds.includes(song.id)
+                      ? "played"
+                      : skippedIds.includes(song.id)
+                        ? "skipped"
+                        : song.id === currentSong.id
+                          ? "current"
+                          : "pending";
+                    return (
+                      <div key={`${song.id}-${index}`} className={`flex items-center gap-3 px-4 py-3 ${status === "current" ? "bg-primary/10" : ""}`}>
+                        <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
+                          {index + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{song.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
+                        </div>
+                        {status === "played" && <Badge className="bg-green-600 text-white">Done</Badge>}
+                        {status === "skipped" && <Badge variant="outline">Skipped</Badge>}
+                        {status === "current" && <Badge className="bg-primary text-primary-foreground">Now</Badge>}
+                        {status !== "pending" && status !== "current" && (
+                          <Button variant="ghost" size="sm" onClick={() => onUndo(song.id)} className="h-8 text-xs">
+                            Undo
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
+            <div className="text-5xl mb-4">🎉</div>
+            <div className="font-display font-bold text-3xl italic">All done!</div>
+            <div className="text-sm mt-2">Great show.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Requests Panel ──────────────────────────────────────
 
 const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
@@ -1095,9 +1332,12 @@ function RequestsPanel({
 export default function StagePage() {
   const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [session, setSessionState] = useState<Session | null>(null);
+  const [currentSetlist, setCurrentSetlist] = useState<SbSetlist | null>(null);
   const [requestScopeId, setRequestScopeId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState(false);
+  const [showAudienceShare, setShowAudienceShare] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [noteModalSong, setNoteModalSong] = useState<Song | null>(null);
   const [sheetSong, setSheetSong] = useState<Song | null>(null);
@@ -1163,17 +1403,25 @@ export default function StagePage() {
   // use an unguessable audience slug; older links/setlists fall back to the setlist id.
   useEffect(() => {
     if (!session?.setlistId) {
+      setCurrentSetlist(null);
       setRequestScopeId(null);
       return;
     }
     sbSetlists
       .getById(session.setlistId)
-      .then((setlist) =>
+      .then((setlist) => {
+        setCurrentSetlist(setlist);
         setRequestScopeId(
           setlist ? requestScopeForSetlist(setlist) : session.setlistId,
-        ),
-      )
-      .catch(() => setRequestScopeId(session.setlistId));
+        );
+        if (setlist?.gig_start_time && !stageTimingStore.getStartTime(session.setlistId)) {
+          setStageStartTime(setlist.gig_start_time);
+        }
+      })
+      .catch(() => {
+        setCurrentSetlist(null);
+        setRequestScopeId(session.setlistId);
+      });
   }, [session?.setlistId]);
 
   // Load PDF map so we know which songs have sheet music
@@ -1485,6 +1733,11 @@ export default function StagePage() {
   const nextTiming = nextSong
     ? songTimings.find((timing) => timing.songId === nextSong.id)
     : null;
+  const audienceScope = requestScopeId ?? session.setlistId;
+  const audienceShareUrl = audienceUrlForScope(audienceScope);
+  const nextSongHasPdf = nextSong
+    ? !!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl)
+    : false;
 
   return (
     <div>
@@ -1571,6 +1824,24 @@ export default function StagePage() {
                 {requests.length}
               </span>
             )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAudienceShare(true)}
+            className="gap-1.5"
+            title="Show audience QR code and scoped request link"
+          >
+            <QrCode className="w-3.5 h-3.5" /> Audience QR
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setPerformanceMode(true)}
+            className="gap-1.5"
+            title="Open simplified live performance view"
+          >
+            <Timer className="w-3.5 h-3.5" /> Performance
           </Button>
           <Button
             variant="outline"
@@ -1811,6 +2082,59 @@ export default function StagePage() {
           </button>
         </>
       )}
+
+      {/* Performance mode overlay */}
+      {performanceMode && (
+        <PerformanceModeView
+          currentSong={nextSong}
+          upcoming={pendingSongs}
+          orderedSongs={orderedSongs}
+          playedIds={playedIds}
+          skippedIds={skippedIds}
+          requestsCount={requests.length}
+          timePlayed={timePlayed}
+          timeRemaining={timeRemaining}
+          projectedEndLabel={projectedEndLabel}
+          stageStartLabel={stageStartLabel}
+          hasPdf={nextSongHasPdf}
+          onClose={() => setPerformanceMode(false)}
+          onOpenSheet={() => {
+            if (nextSongHasPdf && nextSong) {
+              setPerformanceMode(false);
+              setFullscreenPdfSong(nextSong);
+            }
+          }}
+          onAddNote={() => {
+            if (nextSong) {
+              setPerformanceMode(false);
+              setNoteModalSong(nextSong);
+            }
+          }}
+          onMarkPlayed={() => {
+            if (nextSong) markPlayed(nextSong.id);
+          }}
+          onMarkSkipped={() => {
+            if (nextSong) markSkipped(nextSong.id);
+          }}
+          onUndo={undo}
+          onOpenRequests={() => {
+            setPerformanceMode(false);
+            setShowRequests(true);
+          }}
+        />
+      )}
+
+      <AudienceShareDialog
+        open={showAudienceShare}
+        onClose={() => setShowAudienceShare(false)}
+        url={audienceShareUrl}
+        setlistName={currentSetlist?.name ?? "Active Stage set"}
+        subtitle={[currentSetlist?.gig_date, currentSetlist?.gig_start_time ? `Starts ${formatStageStart(currentSetlist.gig_start_time) ?? currentSetlist.gig_start_time}` : null]
+          .filter(Boolean)
+          .join(" · ")}
+        songCount={orderedSongs.length}
+        source="stage"
+      />
 
       {/* Edit setlist modal */}
       {showEditSetlist && (

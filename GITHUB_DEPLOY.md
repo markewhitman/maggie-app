@@ -204,3 +204,9 @@ Phase 5.9 improves the live performer UI:
 
 No Supabase SQL migration is required for Phase 5.9.
 
+
+## Phase 5.10 notes — Performance Mode and Audience QR
+
+Phase 5.10 adds a dedicated Stage Performance view and replaces copy-only audience link behavior with QR/share dialogs. Setlist and Stage audience-share controls now show the scoped QR code, set name, and copy/share/preview actions. Audience request pages also identify the target set and can show either Tonight’s Set or All Songs.
+
+No Supabase SQL migration is required for Phase 5.10.
