@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck } from "lucide-react";
+import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck, Moon, Sun, Palette as PaletteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { createMaggieBackup, downloadBackup } from "@/lib/backup";
+import { PALETTES, useTheme } from "@/components/ThemeProvider";
 
 export default function SettingsPage() {
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
+  const { theme, palette, setTheme, setPalette } = useTheme();
 
   const handleExportBackup = async () => {
     setExporting(true);
@@ -30,6 +32,73 @@ export default function SettingsPage() {
       <div className="mb-6">
         <h1 className="font-display font-bold text-xl italic mb-0.5">Settings</h1>
         <p className="text-muted-foreground text-sm">App configuration and sync status</p>
+      </div>
+
+      {/* Appearance */}
+      <div className="bg-card border border-border rounded-xl p-5 mb-4 space-y-4">
+        <div className="flex items-center gap-3">
+          <PaletteIcon className="w-5 h-5 text-primary" />
+          <div>
+            <div className="font-semibold text-sm">Appearance</div>
+            <div className="text-xs text-muted-foreground">Choose light/dark mode and a performance-friendly color palette</div>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">Mode</div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant={theme === "light" ? "default" : "outline"}
+              className="justify-start gap-2"
+              onClick={() => setTheme("light")}
+            >
+              <Sun className="w-4 h-4" /> Light
+            </Button>
+            <Button
+              type="button"
+              variant={theme === "dark" ? "default" : "outline"}
+              className="justify-start gap-2"
+              onClick={() => setTheme("dark")}
+            >
+              <Moon className="w-4 h-4" /> Dark
+            </Button>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">Color palette</div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {PALETTES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setPalette(option.id)}
+                className={`text-left rounded-xl border p-3 transition-colors ${
+                  palette === option.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-muted/20 hover:border-primary/50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-sm">{option.name}</div>
+                  <div className="flex -space-x-1">
+                    {option.swatches.map((swatch) => (
+                      <span
+                        key={swatch}
+                        className="w-5 h-5 rounded-full border border-background shadow-sm"
+                        style={{ background: swatch }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                  {option.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* PDF Storage */}

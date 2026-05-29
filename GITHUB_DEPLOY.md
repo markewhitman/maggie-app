@@ -192,3 +192,15 @@ These are intentional current-state notes, not deployment steps:
 - There is no authentication or commercial-grade tenancy yet.
 - The included RLS migrations are a personal-MVP baseline. They reduce accidental/public exposure but are not a commercial-grade auth/tenant model.
 
+## Phase 5.9 performer interface polish
+
+Phase 5.9 improves the live performer UI:
+
+- Stage timing is now displayed as larger self-labeled tiles instead of small aligned columns.
+- Stage header shows larger played, remaining, start, and projected-end timing cards.
+- Next Up shows larger timing cues.
+- Settings includes light/dark mode controls plus multiple color palettes.
+- Palette choices are stored locally on each device.
+
+No Supabase SQL migration is required for Phase 5.9.
+

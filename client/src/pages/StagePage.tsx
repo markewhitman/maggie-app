@@ -113,6 +113,22 @@ function sbToPerfNote(r: SbPerfNote): PerformanceNote {
   };
 }
 
+
+function formatClockTime(date: Date | null): string | null {
+  if (!date) return null;
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function formatStageStart(time: string): string | null {
+  if (!time) return null;
+  const [hRaw, mRaw] = time.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const ap = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
+}
+
 function perfNoteToSb(note: PerformanceNote): Omit<SbPerfNote, "user_id"> {
   return {
     id: note.id,
@@ -584,9 +600,36 @@ function StageSongRow({
           ? "bg-primary/10 border-primary/50 shadow-sm shadow-primary/10"
           : "bg-card";
 
-  const clockLabel = clockTime
-    ? clockTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : null;
+  const clockLabel = formatClockTime(clockTime);
+  const timingItems = [
+    showDuration
+      ? { key: "duration", label: "Song length", value: formatDuration(songDuration) }
+      : null,
+    showCumulative
+      ? { key: "elapsed", label: "Set elapsed", value: formatDuration(cumulativeTime) }
+      : null,
+    showClock && clockLabel
+      ? { key: "clock", label: "Start time", value: clockLabel }
+      : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; value: string }>;
+
+  const TimingTiles = ({ compact = false }: { compact?: boolean }) => (
+    <div className={`flex flex-wrap gap-1.5 ${compact ? "" : "justify-end"}`}>
+      {timingItems.map((item) => (
+        <div
+          key={item.key}
+          className={`stage-timing-tile ${item.key === "clock" ? "border-primary/35 bg-primary/10" : ""}`}
+        >
+          <span className="stage-timing-label">{item.label}</span>
+          <span
+            className={`stage-timing-value ${compact ? "text-sm" : "text-base"}`}
+          >
+            {item.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div
@@ -645,37 +688,17 @@ function StageSongRow({
             <span className="font-semibold text-foreground/70">
               {song.key.split("(")[0].trim()}
             </span>
-            {!focusMode && showDuration && (
-              <span>· {formatDuration(songDuration)}</span>
-            )}
-            {!focusMode && showCumulative && (
-              <span>· total {formatDuration(cumulativeTime)}</span>
-            )}
-            {!focusMode && showClock && clockLabel && (
-              <span className="text-amber-600 dark:text-amber-400">
-                · {clockLabel}
-              </span>
-            )}
           </div>
+          {timingItems.length > 0 && (
+            <div className={focusMode ? "mt-3" : "mt-2 md:hidden"}>
+              <TimingTiles compact />
+            </div>
+          )}
         </button>
 
-        {!focusMode && (
-          <div className="hidden md:grid grid-cols-3 gap-1 shrink-0 pt-1 min-w-[132px]">
-            {showDuration && (
-              <div className="text-right text-xs font-mono text-muted-foreground">
-                {formatDuration(songDuration)}
-              </div>
-            )}
-            {showCumulative && (
-              <div className="text-right text-xs font-mono text-primary/80">
-                {formatDuration(cumulativeTime)}
-              </div>
-            )}
-            {showClock && clockLabel && (
-              <div className="text-right text-xs font-mono text-amber-600 dark:text-amber-400">
-                {clockLabel}
-              </div>
-            )}
+        {!focusMode && timingItems.length > 0 && (
+          <div className="hidden md:block shrink-0 pt-1 min-w-[255px]">
+            <TimingTiles />
           </div>
         )}
       </div>
@@ -1454,13 +1477,22 @@ export default function StagePage() {
     elapsed = endSec + BETWEEN_GAP;
   });
 
+  const projectedMusicTime = Math.max(0, elapsed - BETWEEN_GAP);
+  const projectedEndLabel = startDate
+    ? formatClockTime(new Date(startDate.getTime() + projectedMusicTime * 1000))
+    : null;
+  const stageStartLabel = formatStageStart(stageStartTime);
+  const nextTiming = nextSong
+    ? songTimings.find((timing) => timing.songId === nextSong.id)
+    : null;
+
   return (
     <div>
       {ConfirmDialog}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
+      <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
           <h1 className="font-display font-bold text-xl italic mb-0.5">
             Stage Manager
           </h1>
@@ -1468,58 +1500,63 @@ export default function StagePage() {
             {playedIds.length} played · {pendingSongs.length} remaining ·{" "}
             {skippedIds.length} skipped
           </p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
-            {timePlayed > 0 && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                <span>{formatDurationLong(timePlayed)} played</span>
-              </span>
-            )}
-            {timeRemaining > 0 && (
-              <span className="text-xs text-muted-foreground">
-                ~{formatDurationLong(timeRemaining)} remaining
-              </span>
-            )}
-            {/* Start time display / edit */}
-            <div className="flex items-center gap-1.5">
+
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-3xl">
+            <div className="rounded-xl border border-border bg-card px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Played
+              </div>
+              <div className="font-mono text-lg font-extrabold leading-tight">
+                {formatDuration(timePlayed)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Remaining
+              </div>
+              <div className="font-mono text-lg font-extrabold leading-tight">
+                {formatDuration(timeRemaining)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Set starts
+              </div>
               {showStartTimeEdit ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="time"
-                    value={stageStartTime}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setStageStartTime(v);
-                      if (session)
-                        stageTimingStore.setStartTime(session.setlistId, v);
-                    }}
-                    className="text-xs bg-background border border-border rounded px-1.5 py-0.5 font-mono w-24"
-                    autoFocus
-                    onBlur={() => setShowStartTimeEdit(false)}
-                  />
-                </div>
+                <input
+                  type="time"
+                  value={stageStartTime}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setStageStartTime(v);
+                    if (session) stageTimingStore.setStartTime(session.setlistId, v);
+                  }}
+                  className="mt-0.5 w-full bg-background border border-border rounded px-2 py-1 font-mono text-base font-bold"
+                  autoFocus
+                  onBlur={() => setShowStartTimeEdit(false)}
+                />
               ) : (
                 <button
-                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                  className="mt-0.5 flex items-center gap-1 text-left font-mono text-lg font-extrabold leading-tight hover:text-primary transition-colors"
                   onClick={() => setShowStartTimeEdit(true)}
                   title="Set / adjust show start time"
                 >
-                  <Clock className="w-3 h-3" />
-                  {stageStartTime ? (
-                    (() => {
-                      const [h, m] = stageStartTime.split(":").map(Number);
-                      const ap = h >= 12 ? "PM" : "AM";
-                      return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ap}`;
-                    })()
-                  ) : (
-                    <span className="opacity-60 italic">Set start time</span>
-                  )}
+                  <Clock className="w-4 h-4" />
+                  {stageStartLabel ?? <span className="text-sm italic text-muted-foreground">Set time</span>}
                 </button>
               )}
             </div>
+            <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Projected end
+              </div>
+              <div className="font-mono text-lg font-extrabold leading-tight">
+                {projectedEndLabel ?? "—"}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <Button
             variant="outline"
             size="sm"
@@ -1599,8 +1636,29 @@ export default function StagePage() {
                 <span className="font-semibold text-foreground/75">
                   {nextSong.key.split("(")[0].trim()}
                 </span>
-                {nextSong.duration && (
-                  <span>· {formatDurationLong(nextSong.duration)}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="stage-timing-tile">
+                  <span className="stage-timing-label">Song length</span>
+                  <span className="stage-timing-value text-base">
+                    {formatDuration(nextTiming?.songDuration ?? nextSong.duration ?? DEFAULT_DUR)}
+                  </span>
+                </div>
+                {nextTiming && (
+                  <div className="stage-timing-tile">
+                    <span className="stage-timing-label">Set elapsed</span>
+                    <span className="stage-timing-value text-base">
+                      {formatDuration(nextTiming.cumulativeTime)}
+                    </span>
+                  </div>
+                )}
+                {nextTiming?.clockTime && (
+                  <div className="stage-timing-tile border-primary/35 bg-primary/10">
+                    <span className="stage-timing-label">Expected start</span>
+                    <span className="stage-timing-value text-base">
+                      {formatClockTime(nextTiming.clockTime)}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
@@ -1640,67 +1698,49 @@ export default function StagePage() {
         </div>
       )}
 
-      {/* Column visibility toggles + column headers */}
+      {/* Timing display controls */}
       {!focusMode && (
-        <div className="mb-2 space-y-1.5">
-          {/* Toggle pill row */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground mr-1">
-              Columns:
-            </span>
-            {(
-              [
-                { key: "showDuration" as keyof StageTimingPrefs, label: "Dur" },
-                {
-                  key: "showCumulative" as keyof StageTimingPrefs,
-                  label: "Total",
-                },
-                { key: "showClock" as keyof StageTimingPrefs, label: "Clock" },
-              ] as const
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => toggleCol(key)}
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
-                  colPrefs[key]
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Column header labels aligned with song rows */}
-          {(colPrefs.showDuration ||
-            colPrefs.showCumulative ||
-            colPrefs.showClock) && (
-            <div className="flex items-center gap-2 px-3 py-0">
-              {/* spacers for: drag handle, (optional pulse dot), title area flex-1 */}
-              <span className="w-4 shrink-0" />
-              {/* drag handle */}
-              <span className="flex-1" />
-              {/* title area */}
-              {colPrefs.showDuration && (
-                <span className="shrink-0 w-12 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                  Dur
-                </span>
-              )}
-              {colPrefs.showCumulative && (
-                <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                  Total
-                </span>
-              )}
-              {colPrefs.showClock && (
-                <span className="shrink-0 w-14 text-right text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                  Clock
-                </span>
-              )}
-              <span className="w-[108px] shrink-0" />
-              {/* action buttons placeholder */}
+        <div className="mb-3 rounded-xl border border-border bg-card/70 px-3 py-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Timing shown on each song
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Choose only the timing cues that help during performance.
+              </div>
             </div>
-          )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  {
+                    key: "showDuration" as keyof StageTimingPrefs,
+                    label: "Song length",
+                  },
+                  {
+                    key: "showCumulative" as keyof StageTimingPrefs,
+                    label: "Set elapsed",
+                  },
+                  {
+                    key: "showClock" as keyof StageTimingPrefs,
+                    label: "Start time",
+                  },
+                ] as const
+              ).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => toggleCol(key)}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                    colPrefs[key]
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-transparent text-muted-foreground border-border hover:border-primary/50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

@@ -194,3 +194,250 @@ body {
     border-radius: 1rem;
   }
 }
+
+/* ── PHASE 5.9 COLOR PALETTES ─────────────────────────────────────── */
+:root[data-palette="stage"] {
+  --primary: 39 96% 52%;
+  --primary-foreground: 220 24% 7%;
+  --primary-hover: 39 96% 60%;
+  --background: 42 24% 96%;
+  --foreground: 220 28% 10%;
+  --card: 42 22% 93%;
+  --card-foreground: 220 28% 10%;
+  --popover: 42 24% 96%;
+  --popover-foreground: 220 28% 10%;
+  --border: 38 18% 78%;
+  --input: 38 18% 78%;
+  --muted: 38 18% 88%;
+  --muted-foreground: 220 12% 42%;
+  --ring: 39 96% 58%;
+  --accent: 24 94% 52%;
+  --accent-foreground: 42 30% 98%;
+  --secondary: 38 18% 88%;
+  --secondary-foreground: 220 24% 16%;
+  --stage-bg: 220 24% 7%;
+  --stage-card: 220 22% 11%;
+  --stage-accent: 39 96% 58%;
+  --stage-text: 42 30% 94%;
+}
+
+.dark[data-palette="stage"] {
+  --background: 220 24% 7%;
+  --foreground: 42 30% 94%;
+  --card: 220 22% 11%;
+  --card-foreground: 42 30% 94%;
+  --popover: 220 22% 10%;
+  --popover-foreground: 42 30% 94%;
+  --border: 220 16% 24%;
+  --input: 220 16% 24%;
+  --muted: 220 18% 15%;
+  --muted-foreground: 42 12% 66%;
+  --primary: 39 96% 58%;
+  --primary-foreground: 220 24% 7%;
+  --primary-hover: 39 96% 64%;
+  --secondary: 220 17% 18%;
+  --secondary-foreground: 42 30% 88%;
+  --accent: 24 94% 57%;
+}
+
+:root[data-palette="rosewood"] {
+  --primary: 350 72% 46%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 350 72% 40%;
+  --background: 14 45% 96%;
+  --foreground: 350 28% 13%;
+  --card: 15 42% 93%;
+  --card-foreground: 350 28% 13%;
+  --popover: 14 45% 97%;
+  --popover-foreground: 350 28% 13%;
+  --border: 12 24% 82%;
+  --input: 12 24% 82%;
+  --muted: 14 30% 89%;
+  --muted-foreground: 350 16% 44%;
+  --ring: 350 72% 50%;
+  --accent: 20 75% 50%;
+  --accent-foreground: 0 0% 100%;
+  --secondary: 14 30% 88%;
+  --secondary-foreground: 350 25% 20%;
+  --stage-bg: 350 35% 8%;
+  --stage-card: 350 30% 12%;
+  --stage-accent: 350 72% 58%;
+  --stage-text: 14 45% 94%;
+}
+
+.dark[data-palette="rosewood"] {
+  --background: 350 35% 8%;
+  --foreground: 14 45% 94%;
+  --card: 350 30% 12%;
+  --card-foreground: 14 45% 94%;
+  --popover: 350 30% 12%;
+  --popover-foreground: 14 45% 94%;
+  --border: 350 20% 24%;
+  --input: 350 20% 24%;
+  --muted: 350 24% 16%;
+  --muted-foreground: 14 22% 66%;
+  --primary: 350 75% 60%;
+  --primary-foreground: 350 35% 8%;
+  --primary-hover: 350 75% 66%;
+  --secondary: 350 24% 18%;
+  --secondary-foreground: 14 45% 88%;
+  --accent: 20 78% 58%;
+}
+
+:root[data-palette="sage"] {
+  --primary: 145 36% 38%;
+  --primary-foreground: 48 30% 98%;
+  --primary-hover: 145 36% 32%;
+  --background: 48 28% 96%;
+  --foreground: 132 22% 13%;
+  --card: 48 22% 93%;
+  --card-foreground: 132 22% 13%;
+  --popover: 48 28% 97%;
+  --popover-foreground: 132 22% 13%;
+  --border: 80 16% 78%;
+  --input: 80 16% 78%;
+  --muted: 78 18% 88%;
+  --muted-foreground: 132 10% 42%;
+  --ring: 145 36% 45%;
+  --accent: 30 58% 45%;
+  --accent-foreground: 48 30% 98%;
+  --secondary: 78 18% 88%;
+  --secondary-foreground: 132 22% 19%;
+  --stage-bg: 132 26% 8%;
+  --stage-card: 132 22% 12%;
+  --stage-accent: 145 45% 55%;
+  --stage-text: 48 28% 93%;
+}
+
+.dark[data-palette="sage"] {
+  --background: 132 26% 8%;
+  --foreground: 48 28% 93%;
+  --card: 132 22% 12%;
+  --card-foreground: 48 28% 93%;
+  --popover: 132 22% 12%;
+  --popover-foreground: 48 28% 93%;
+  --border: 132 16% 24%;
+  --input: 132 16% 24%;
+  --muted: 132 18% 16%;
+  --muted-foreground: 48 12% 64%;
+  --primary: 145 45% 55%;
+  --primary-foreground: 132 26% 8%;
+  --primary-hover: 145 45% 62%;
+  --secondary: 132 18% 18%;
+  --secondary-foreground: 48 28% 86%;
+  --accent: 30 64% 56%;
+}
+
+:root[data-palette="ocean"] {
+  --primary: 197 78% 42%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 197 78% 36%;
+  --background: 210 40% 97%;
+  --foreground: 210 32% 12%;
+  --card: 204 36% 94%;
+  --card-foreground: 210 32% 12%;
+  --popover: 210 40% 98%;
+  --popover-foreground: 210 32% 12%;
+  --border: 205 24% 82%;
+  --input: 205 24% 82%;
+  --muted: 204 30% 90%;
+  --muted-foreground: 210 14% 43%;
+  --ring: 197 78% 48%;
+  --accent: 174 62% 38%;
+  --accent-foreground: 0 0% 100%;
+  --secondary: 204 30% 90%;
+  --secondary-foreground: 210 30% 20%;
+  --stage-bg: 210 32% 7%;
+  --stage-card: 210 28% 11%;
+  --stage-accent: 197 78% 58%;
+  --stage-text: 210 40% 94%;
+}
+
+.dark[data-palette="ocean"] {
+  --background: 210 32% 7%;
+  --foreground: 210 40% 94%;
+  --card: 210 28% 11%;
+  --card-foreground: 210 40% 94%;
+  --popover: 210 28% 11%;
+  --popover-foreground: 210 40% 94%;
+  --border: 210 20% 24%;
+  --input: 210 20% 24%;
+  --muted: 210 24% 16%;
+  --muted-foreground: 210 18% 66%;
+  --primary: 197 78% 58%;
+  --primary-foreground: 210 32% 7%;
+  --primary-hover: 197 78% 64%;
+  --secondary: 210 24% 18%;
+  --secondary-foreground: 210 40% 88%;
+  --accent: 174 62% 50%;
+}
+
+:root[data-palette="violet"] {
+  --primary: 263 70% 56%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 263 70% 49%;
+  --background: 270 36% 97%;
+  --foreground: 263 28% 13%;
+  --card: 270 30% 94%;
+  --card-foreground: 263 28% 13%;
+  --popover: 270 36% 98%;
+  --popover-foreground: 263 28% 13%;
+  --border: 267 24% 83%;
+  --input: 267 24% 83%;
+  --muted: 270 26% 90%;
+  --muted-foreground: 263 14% 43%;
+  --ring: 263 70% 60%;
+  --accent: 315 54% 50%;
+  --accent-foreground: 0 0% 100%;
+  --secondary: 270 26% 90%;
+  --secondary-foreground: 263 28% 20%;
+  --stage-bg: 263 30% 8%;
+  --stage-card: 263 26% 12%;
+  --stage-accent: 263 70% 64%;
+  --stage-text: 270 36% 94%;
+}
+
+.dark[data-palette="violet"] {
+  --background: 263 30% 8%;
+  --foreground: 270 36% 94%;
+  --card: 263 26% 12%;
+  --card-foreground: 270 36% 94%;
+  --popover: 263 26% 12%;
+  --popover-foreground: 270 36% 94%;
+  --border: 263 20% 24%;
+  --input: 263 20% 24%;
+  --muted: 263 22% 16%;
+  --muted-foreground: 270 18% 66%;
+  --primary: 263 75% 66%;
+  --primary-foreground: 263 30% 8%;
+  --primary-hover: 263 75% 72%;
+  --secondary: 263 22% 18%;
+  --secondary-foreground: 270 36% 88%;
+  --accent: 315 58% 62%;
+}
+
+.stage-timing-tile {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.34);
+  border-radius: 0.75rem;
+  padding: 0.35rem 0.55rem;
+  min-width: 4.8rem;
+}
+
+.stage-timing-label {
+  display: block;
+  font-size: 0.58rem;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.18rem;
+}
+
+.stage-timing-value {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-weight: 800;
+  line-height: 1.05;
+  color: hsl(var(--foreground));
+}
