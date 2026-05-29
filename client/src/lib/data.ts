@@ -46,6 +46,8 @@ export interface Setlist {
   venueId?: string;
   songIds: string[]; // ordered
   createdAt: string;
+  audienceSlug?: string;
+  requestsEnabled?: boolean;
 }
 
 export interface Venue {

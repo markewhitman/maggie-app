@@ -7,7 +7,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { SEED_SONGS, formatDuration, formatDurationLong, stageTimingStore, type Song, type PerformanceNote, type StageTimingPrefs } from "@/lib/data";
-import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, sbSongs, type SbRequest, type SbPerfNote } from "@/lib/supabase";
+import { sbSession, sbRequests, sbSongPdfs, sbSetlists, sbPerfNotes, sbSongs, requestScopeForSetlist, type SbRequest, type SbPerfNote } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -682,6 +682,7 @@ function RequestsPanel({
 export default function StagePage() {
   const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [session, setSessionState] = useState<Session | null>(null);
+  const [requestScopeId, setRequestScopeId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
   const [noteModalSong, setNoteModalSong] = useState<Song | null>(null);
@@ -734,6 +735,19 @@ export default function StagePage() {
     }).catch(() => setSessionLoading(false));
   }, []);
 
+  // Resolve the public request scope for the active set. New audience links
+  // use an unguessable audience slug; older links/setlists fall back to the setlist id.
+  useEffect(() => {
+    if (!session?.setlistId) {
+      setRequestScopeId(null);
+      return;
+    }
+    sbSetlists
+      .getById(session.setlistId)
+      .then((setlist) => setRequestScopeId(setlist ? requestScopeForSetlist(setlist) : session.setlistId))
+      .catch(() => setRequestScopeId(session.setlistId));
+  }, [session?.setlistId]);
+
   // Load PDF map so we know which songs have sheet music
   useEffect(() => {
     sbSongPdfs.getAll().then(setPdfMap).catch(() => {});
@@ -754,14 +768,14 @@ export default function StagePage() {
   // Poll for audience requests every 30 s. When an active set is loaded,
   // only show requests that were submitted through that set's audience link.
   useEffect(() => {
-    const activeGigId = session?.setlistId ?? null;
+    const activeGigId = requestScopeId ?? session?.setlistId ?? null;
     const fetchRequests = () => {
       sbRequests.getPending(activeGigId).then(setRequests).catch(() => {});
     };
     fetchRequests();
     pollRef.current = setInterval(fetchRequests, 30000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [session?.setlistId]);
+  }, [session?.setlistId, requestScopeId]);
 
   const handleApprove = async (req: SbRequest) => {
     await sbRequests.resolve(req, "approved");
@@ -1203,7 +1217,7 @@ export default function StagePage() {
         <RequestsPanel
           requests={requests}
           songs={songs}
-          gigId={session?.setlistId ?? null}
+          gigId={requestScopeId ?? session?.setlistId ?? null}
           onApprove={handleApprove}
           onDeny={handleDeny}
           onSuggest={handleSuggestAlternative}
@@ -1216,7 +1230,7 @@ export default function StagePage() {
             });
             if (!confirmed) return;
             try {
-              await sbRequests.clearAll(session?.setlistId ?? null);
+              await sbRequests.clearAll(requestScopeId ?? session?.setlistId ?? null);
               setRequests([]);
               toast({ title: "Requests cleared" });
             } catch (err: any) {

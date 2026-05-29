@@ -19,8 +19,21 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const SHARED_USER_ID = "maggie-whitman-app-2026";
 
+export const APP_USER_ID = SHARED_USER_ID;
+
 export function getDeviceId(): string {
   return SHARED_USER_ID;
+}
+
+export function generateAudienceSlug(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
+}
+
+export function requestScopeForSetlist(setlist: Pick<SbSetlist, "id" | "audience_slug">): string {
+  return setlist.audience_slug || setlist.id;
 }
 
 function isMissingColumnError(error: any): boolean {
@@ -45,6 +58,8 @@ export interface SbSetlist {
   venue_id: string | null;
   song_ids: string[];
   created_at: string;
+  audience_slug: string | null;
+  requests_enabled: boolean;
 }
 
 export interface SbVenue {
@@ -323,9 +338,26 @@ export const sbSetlists = {
     return data ?? [];
   },
 
+  async getById(id: string): Promise<SbSetlist | null> {
+    const userId = getDeviceId();
+    const { data, error } = await supabase
+      .from("setlists")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as SbSetlist | null) ?? null;
+  },
+
   async save(setlist: Omit<SbSetlist, "user_id">): Promise<void> {
     const userId = getDeviceId();
-    const payload = { ...setlist, user_id: userId };
+    const payload = {
+      ...setlist,
+      user_id: userId,
+      audience_slug: setlist.audience_slug || generateAudienceSlug(),
+      requests_enabled: setlist.requests_enabled ?? true,
+    };
     const { error } = await supabase
       .from("setlists")
       .upsert(payload, { onConflict: "id" });
@@ -333,8 +365,8 @@ export const sbSetlists = {
     // Backward-compatible fallback for older Supabase projects that do not yet
     // have the gig_start_time column. After applying the Phase 3 migration, the
     // first write path above will persist start time cross-device.
-    if (error && isMissingColumnError(error) && "gig_start_time" in payload) {
-      const { gig_start_time: _drop, ...legacyPayload } = payload;
+    if (error && isMissingColumnError(error)) {
+      const { gig_start_time: _start, audience_slug: _slug, requests_enabled: _enabled, ...legacyPayload } = payload;
       const retry = await supabase
         .from("setlists")
         .upsert(legacyPayload, { onConflict: "id" });
@@ -352,8 +384,8 @@ export const sbSetlists = {
       .eq("id", id)
       .eq("user_id", userId);
 
-    if (error && isMissingColumnError(error) && "gig_start_time" in data) {
-      const { gig_start_time: _drop, ...legacyData } = data;
+    if (error && isMissingColumnError(error)) {
+      const { gig_start_time: _start, audience_slug: _slug, requests_enabled: _enabled, ...legacyData } = data as Record<string, unknown>;
       const retry = await supabase
         .from("setlists")
         .update(legacyData)
@@ -546,19 +578,30 @@ export const sbPdfs = {
 
 export const sbSongPdfs = {
   async save(songId: string, pdfUrl: string, pdfName: string): Promise<void> {
+    const userId = getDeviceId();
     await supabase.from("song_pdfs").upsert(
-      { song_id: songId, pdf_url: pdfUrl, pdf_name: pdfName, updated_at: new Date().toISOString() },
+      { song_id: songId, user_id: userId, pdf_url: pdfUrl, pdf_name: pdfName, updated_at: new Date().toISOString() },
       { onConflict: "song_id" }
     );
   },
   async getAll(): Promise<Record<string, { url: string; name: string }>> {
-    const { data } = await supabase.from("song_pdfs").select("song_id, pdf_url, pdf_name");
+    const userId = getDeviceId();
+    let query = supabase.from("song_pdfs").select("song_id, pdf_url, pdf_name").eq("user_id", userId);
+    let { data, error } = await query;
+    if (error && isMissingColumnError(error)) {
+      const fallback = await supabase.from("song_pdfs").select("song_id, pdf_url, pdf_name");
+      data = fallback.data;
+    }
     const map: Record<string, { url: string; name: string }> = {};
     (data ?? []).forEach((r: any) => { map[r.song_id] = { url: r.pdf_url, name: r.pdf_name ?? "" }; });
     return map;
   },
   async remove(songId: string): Promise<void> {
-    await supabase.from("song_pdfs").delete().eq("song_id", songId);
+    const userId = getDeviceId();
+    const { error } = await supabase.from("song_pdfs").delete().eq("song_id", songId).eq("user_id", userId);
+    if (error && isMissingColumnError(error)) {
+      await supabase.from("song_pdfs").delete().eq("song_id", songId);
+    }
   },
 };
 

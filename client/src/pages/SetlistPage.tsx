@@ -8,7 +8,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { SEED_SONGS, type Song, type Setlist, type Venue, formatDuration, formatDurationLong, stageTimingStore } from "@/lib/data";
-import { sbSetlists, sbVenues, sbSession, sbSongs, getDeviceId, type SbSetlist, type SbVenue } from "@/lib/supabase";
+import { sbSetlists, sbVenues, sbSession, sbSongs, getDeviceId, generateAudienceSlug, type SbSetlist, type SbVenue } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,8 @@ function sbToSetlist(r: SbSetlist): Setlist {
     venueId: r.venue_id ?? undefined,
     songIds: r.song_ids,
     createdAt: r.created_at,
+    audienceSlug: r.audience_slug ?? undefined,
+    requestsEnabled: r.requests_enabled ?? true,
   };
 }
 
@@ -51,9 +53,10 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function audienceUrlForSetlist(setlistId: string): string {
-  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(setlistId)}`;
-  return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(setlistId)}`;
+function audienceUrlForSetlist(setlist: Pick<Setlist, "id" | "audienceSlug">): string {
+  const scope = setlist.audienceSlug || setlist.id;
+  if (typeof window === "undefined") return `#/audience/${encodeURIComponent(scope)}`;
+  return `${window.location.origin}${window.location.pathname}#/audience/${encodeURIComponent(scope)}`;
 }
 
 // ─── Sortable Item ────────────────────────────────────────
@@ -531,6 +534,8 @@ export default function SetlistPage() {
           venue_id: venueId,
           song_ids: selectedIds,
           created_at: now,
+          audience_slug: generateAudienceSlug(),
+          requests_enabled: true,
         };
         await sbSetlists.save(newSl);
         if (venueId) await sbVenues.incrementGigCount(venueId);
@@ -605,7 +610,7 @@ export default function SetlistPage() {
   };
 
   const copyAudienceLink = async (setlist: Setlist) => {
-    const url = audienceUrlForSetlist(setlist.id);
+    const url = audienceUrlForSetlist(setlist);
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: "Audience link copied", description: "Share this QR/link for this specific gig." });

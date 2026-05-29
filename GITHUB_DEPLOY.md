@@ -134,9 +134,10 @@ Apply these migrations before relying on the current cloud-sync behavior:
 supabase/migrations/20260528_phase3_gig_scoped_requests.sql
 supabase/migrations/20260528_phase4_cloud_songs_cleanup.sql
 supabase/migrations/20260528_phase4_2_cleanup_reliability.sql
+supabase/migrations/20260528_phase5_security_hardening.sql
 ```
 
-See `docs/PHASE3_SUPABASE_SECURITY.md` for the remaining personal-MVP versus commercial security gap.
+See `docs/PHASE5_SECURITY_HARDENING.md` for the current personal-MVP hardening baseline and the remaining commercial security gap.
 
 ---
 
@@ -176,9 +177,10 @@ These are intentional current-state notes, not deployment steps:
 - User-added songs and edited seed-song overrides now sync through Supabase after the Phase 4 migration is applied.
 - The first app load after deploying Phase 4 migrates any existing local user-added songs into Supabase.
 - Phase 4.2 adds the missing `songs` table grants to the migration history, adds JSON backup/export, and lazy-loads PDF rendering.
+- Phase 5 enables RLS on the remaining core app tables and moves new audience links toward random audience slugs instead of raw setlist ids.
 - Built-in seed songs still ship in the frontend bundle, with synced overrides stored in Supabase.
 - Audience requests are gig-scoped after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the legacy unscoped queue.
 - `gig_start_time` syncs after applying the Phase 3 Supabase migration. Before the migration, the client falls back to the older schema.
 - There is no authentication or commercial-grade tenancy yet.
-- The included RLS migrations are a personal-MVP baseline. They are not a commercial-grade auth/tenant model.
+- The included RLS migrations are a personal-MVP baseline. They reduce accidental/public exposure but are not a commercial-grade auth/tenant model.
 
