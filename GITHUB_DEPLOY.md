@@ -277,3 +277,9 @@ No Supabase SQL migration or Edge Function redeploy is required for Phase 5.14.1
 Phase 5.14 adds keyboard and Bluetooth page-turner support for Stage, Performance Mode, and the fullscreen PDF viewer. Settings now includes a Performance Controls toggle and shortcut reference. Stage and PDF viewer surfaces also include on-screen shortcut help.
 
 No Supabase SQL migration is required for Phase 5.14.
+
+## Phase 5.15 — Pre-Gig Readiness + Set Confidence
+
+Phase 5.15 adds a readiness screen before loading a set for performance. The app now checks missing PDFs, missing durations, songs needing review, duplicate songs, missing key/chord cues, audience QR readiness, runtime estimates, and backup freshness.
+
+No Supabase SQL migration or Edge Function redeploy is required for this phase.

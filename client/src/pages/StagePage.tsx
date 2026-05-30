@@ -24,6 +24,7 @@ import {
   type Song,
   type PerformanceNote,
   type StageTimingPrefs,
+  type Setlist,
 } from "@/lib/data";
 import {
   sbSession,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/supabase";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { AudienceShareDialog } from "@/components/AudienceShareDialog";
+import { PreGigReadinessDialog } from "@/components/PreGigReadinessDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,6 +87,7 @@ import {
   Timer,
   ChevronUp,
   ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 import { STAGE_SHORTCUTS, performanceControlsStore, shouldIgnorePerformanceShortcut } from "@/lib/performanceControls";
 
@@ -119,6 +122,20 @@ function sbToPerfNote(r: SbPerfNote): PerformanceNote {
       r.lyrics_confidence as PerformanceNote["lyricsConfidence"],
     notes: r.notes,
     createdAt: r.created_at,
+  };
+}
+
+function sbToSetlist(r: SbSetlist): Setlist {
+  return {
+    id: r.id,
+    name: r.name,
+    gigDate: r.gig_date ?? undefined,
+    gigStartTime: r.gig_start_time ?? undefined,
+    venueId: r.venue_id ?? undefined,
+    songIds: r.song_ids,
+    createdAt: r.created_at,
+    audienceSlug: r.audience_slug ?? undefined,
+    requestsEnabled: r.requests_enabled ?? true,
   };
 }
 
@@ -1458,6 +1475,7 @@ export default function StagePage() {
   const [glanceMode, setGlanceMode] = useState(false);
   const [performanceMode, setPerformanceMode] = useState(false);
   const [showAudienceShare, setShowAudienceShare] = useState(false);
+  const [showReadiness, setShowReadiness] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [noteModalSong, setNoteModalSong] = useState<Song | null>(null);
   const [sheetSong, setSheetSong] = useState<Song | null>(null);
@@ -2039,6 +2057,16 @@ export default function StagePage() {
             <QrCode className="w-3.5 h-3.5" /> Audience QR
           </Button>
           <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowReadiness(true)}
+            disabled={!currentSetlist}
+            className="gap-1.5"
+            title="Check missing PDFs, durations, review flags, QR readiness, and backup status"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" /> Ready
+          </Button>
+          <Button
             variant="default"
             size="sm"
             onClick={() => setPerformanceMode(true)}
@@ -2349,6 +2377,17 @@ export default function StagePage() {
         songCount={orderedSongs.length}
         source="stage"
       />
+
+
+      {showReadiness && currentSetlist && (
+        <PreGigReadinessDialog
+          open={showReadiness}
+          onClose={() => setShowReadiness(false)}
+          setlist={sbToSetlist(currentSetlist)}
+          songs={songs}
+          loadLabel="Return to Stage"
+        />
+      )}
 
       {/* Edit setlist modal */}
       {showEditSetlist && (

@@ -1,3 +1,4 @@
+import { markBackupExported } from "@/lib/setlistReadiness";
 import {
   getDeviceId,
   sbPdfAnnotations,
@@ -112,5 +113,6 @@ export function downloadBackup(backup: MaggieBackup): string {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  markBackupExported(new Date(backup.exportedAt));
   return filename;
 }

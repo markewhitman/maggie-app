@@ -35,6 +35,7 @@ import {
   type SbSetlist,
   type SbVenue,
 } from "@/lib/supabase";
+import { analyzeSetlistReadiness, readinessToneClasses } from "@/lib/setlistReadiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +57,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import { AudienceShareDialog } from "@/components/AudienceShareDialog";
+import { PreGigReadinessDialog } from "@/components/PreGigReadinessDialog";
 import {
   Plus,
   GripVertical,
@@ -76,6 +78,7 @@ import {
   QrCode,
   Copy,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 
 // ─── Helpers: map Supabase rows ↔ local types ─────────────
@@ -444,6 +447,7 @@ function SetlistCard({
         .filter(Boolean) as string[],
     ),
   );
+  const readiness = analyzeSetlistReadiness(setlist, songs);
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -479,6 +483,9 @@ function SetlistCard({
                   <AlertTriangle className="w-3 h-3" /> Duplicate song
                 </span>
               )}
+              <span className={`text-xs border px-2 py-0.5 rounded-full flex items-center gap-1 ${readinessToneClasses(readiness.tone)}`}>
+                <ShieldCheck className="w-3 h-3" /> {readiness.label}
+              </span>
               {setlist.gigStartTime && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                   <Clock className="w-3 h-3" />{" "}
@@ -598,6 +605,7 @@ export default function SetlistPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [shareSetlist, setShareSetlist] = useState<Setlist | null>(null);
+  const [readinessSetlist, setReadinessSetlist] = useState<Setlist | null>(null);
 
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingSetlistId, setEditingSetlistId] = useState<string | null>(null);
@@ -1032,7 +1040,7 @@ export default function SetlistPage() {
               songs={songs}
               venues={venues}
               onDelete={() => deleteSetlist(sl.id)}
-              onLoad={() => loadSetlist(sl)}
+              onLoad={() => setReadinessSetlist(sl)}
               onEdit={() => openEdit(sl)}
               onDuplicate={() => duplicateSetlist(sl)}
               onShowAudienceLink={() => showAudienceLink(sl)}
@@ -1043,6 +1051,16 @@ export default function SetlistPage() {
 
       {ConfirmDialog}
 
+
+      {readinessSetlist && (
+        <PreGigReadinessDialog
+          open={!!readinessSetlist}
+          onClose={() => setReadinessSetlist(null)}
+          setlist={readinessSetlist}
+          songs={songs}
+          onLoadTonight={() => loadSetlist(readinessSetlist)}
+        />
+      )}
       {shareSetlist && (
         <AudienceShareDialog
           open={!!shareSetlist}
