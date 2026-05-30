@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Song } from "@/lib/data";
 import { sbPdfs, sbSongPdfs, sbSongs } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { analyzeSongPdf, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
+import { analyzeSongPdf, enhanceSongPdfWithAi, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
 import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Loader2, Music, Sparkles, Tag, Upload, Wand2, X } from "lucide-react";
 
 interface Props {
@@ -128,6 +128,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [durationInput, setDurationInput] = useState("");
   const [analyzingPdf, setAnalyzingPdf] = useState(false);
+  const [enhancingPdf, setEnhancingPdf] = useState(false);
   const [smartImport, setSmartImport] = useState<SmartPdfImportResult | null>(null);
 
   const [form, setForm] = useState({
@@ -252,9 +253,13 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
       toast({
         title: result.readableTextFound ? "PDF scanned for song details" : "PDF attached",
         description: result.readableTextFound
-          ? "I filled blank fields from the readable PDF text. Review before saving."
-          : "No selectable text was found, so I used the filename where possible.",
+          ? "I filled blank fields from the readable PDF text. Review before saving. Use AI/OCR if the scan needs more help."
+          : "No selectable text was found. Use AI/OCR to read scanned pages, or enter details manually.",
       });
+
+      if (!result.readableTextFound) {
+        void handleAiEnhance(result, file, true);
+      }
     } catch (err: any) {
       toast({
         title: "PDF attached",
@@ -262,6 +267,30 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
       });
     } finally {
       setAnalyzingPdf(false);
+    }
+  };
+
+  const handleAiEnhance = async (baseResult = smartImport, file = pdfFile, automatic = false) => {
+    if (!baseResult || !file) return;
+    setEnhancingPdf(true);
+    try {
+      const enhanced = await enhanceSongPdfWithAi(file, baseResult, existingSongs);
+      setSmartImport(enhanced);
+      applySmartImport(enhanced, false);
+      toast({
+        title: "AI/OCR suggestions ready",
+        description: enhanced.durationSource
+          ? `Song details updated. Duration source: ${enhanced.durationSource}.`
+          : "Review the extracted song details before saving.",
+      });
+    } catch (err: any) {
+      toast({
+        title: automatic ? "AI/OCR not available" : "AI/OCR could not analyze this PDF",
+        description: err?.message ?? "The PDF is still attached. You can continue with manual details.",
+        variant: automatic ? "default" : "destructive",
+      });
+    } finally {
+      setEnhancingPdf(false);
     }
   };
 
@@ -402,21 +431,28 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5 rounded-full bg-primary/10 p-1.5 text-primary">
-                    {analyzingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {analyzingPdf || enhancingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   </div>
                   <div>
                     <div className="font-semibold text-sm">Smart PDF Import</div>
                     <p className="text-xs text-muted-foreground leading-snug">
                       {analyzingPdf
                         ? "Reading the PDF text and filename for title, artist, key, capo, chords, tempo, and tags…"
-                        : smartImport?.readableTextFound
-                          ? `Found readable PDF text${smartImport.pageCount ? ` across ${smartImport.pageCount} page${smartImport.pageCount === 1 ? "" : "s"}` : ""}. Review suggestions before saving.`
-                          : "No selectable PDF text was found. Suggestions are based on the filename only; scanned PDFs still need manual entry."}
+                        : enhancingPdf
+                          ? "Using AI/OCR to read scanned pages and resolve missing duration from music metadata or a chart estimate…"
+                          : smartImport?.aiEnhanced
+                            ? "AI/OCR suggestions are ready. Review every field before saving."
+                            : smartImport?.readableTextFound
+                              ? `Found readable PDF text${smartImport.pageCount ? ` across ${smartImport.pageCount} page${smartImport.pageCount === 1 ? "" : "s"}` : ""}. Review suggestions before saving.`
+                              : "No selectable PDF text was found. Use AI/OCR to read scanned pages, or enter details manually."}
                     </p>
                   </div>
                 </div>
                 {smartImport && (
                   <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" className="gap-1.5" disabled={enhancingPdf} onClick={() => handleAiEnhance()}>
+                      {enhancingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} AI/OCR
+                    </Button>
                     <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => applySmartImport(smartImport, false)}>
                       <Wand2 className="w-3.5 h-3.5" /> Fill blanks
                     </Button>
@@ -433,7 +469,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
                     <div className={`rounded-xl border px-3 py-2 ${qualityTone(smartImport.importQuality)}`}>
                       <div className="text-[10px] uppercase tracking-wide font-semibold opacity-75">Import confidence</div>
                       <div className="font-semibold text-sm">{confidenceLabel(smartImport.importQuality)}</div>
-                      <div className="text-[11px] mt-0.5 opacity-85">{smartImport.readableTextFound ? "Readable PDF text found" : "Filename-only import"}</div>
+                      <div className="text-[11px] mt-0.5 opacity-85">{smartImport.aiEnhanced ? "AI/OCR enhanced" : smartImport.readableTextFound ? "Readable PDF text found" : "Filename-only import"}</div>
                     </div>
                     <div className="rounded-xl border border-border bg-background/70 px-3 py-2">
                       <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">Missing essentials</div>
@@ -479,9 +515,16 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
                     <SuggestionRow label="Strumming" suggestion={smartImport.suggestions.strumming} />
                     <SuggestionRow label="Tempo" suggestion={smartImport.suggestions.tempo} />
                     <SuggestionRow label="Duration" suggestion={smartImport.suggestions.duration} />
+                    <SuggestionRow label="Performance note" suggestion={smartImport.suggestions.performanceNote} />
                     <SuggestionRow label="Tags" suggestion={smartImport.suggestions.tags} />
                     <SuggestionRow label="Source URL" suggestion={smartImport.suggestions.ultimateGuitarUrl} />
                   </div>
+                  {smartImport.enhancementNotes && smartImport.enhancementNotes.length > 0 && (
+                    <div className="text-xs text-muted-foreground rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+                      <div className="font-semibold text-foreground mb-1">AI/OCR notes</div>
+                      {smartImport.enhancementNotes.join(" ")}
+                    </div>
+                  )}
                   {smartImport.warnings.length > 0 && (
                     <div className="text-xs text-muted-foreground rounded-lg border border-border bg-background/70 px-3 py-2">
                       {smartImport.warnings.join(" ")}
@@ -665,7 +708,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
                     <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => handlePdfSelection(e.target.files?.[0])} />
                   </label>
                 )}
-                <p className="text-xs text-muted-foreground">Text-based PDFs can auto-fill title, artist, key, capo, chords, tempo, tags, and stage notes. Scanned PDFs can still be attached and filled manually.</p>
+                <p className="text-xs text-muted-foreground">Text-based PDFs can auto-fill title, artist, key, capo, chords, tempo, tags, and stage notes. Scanned PDFs can use AI/OCR once the Supabase Edge Function and OpenAI secret are deployed.</p>
               </div>
             </div>
           </section>

@@ -5,7 +5,7 @@ export type SmartImportConfidence = "high" | "medium" | "low";
 export interface SmartImportSuggestion {
   value: string;
   confidence: SmartImportConfidence;
-  source: "filename" | "pdf text" | "inference";
+  source: "filename" | "pdf text" | "inference" | "ai/ocr" | "music metadata" | "duration estimate";
 }
 
 export interface SmartPdfImportResult {
@@ -14,6 +14,9 @@ export interface SmartPdfImportResult {
   pageCount?: number;
   textSample?: string;
   warnings: string[];
+  aiEnhanced?: boolean;
+  enhancementNotes?: string[];
+  durationSource?: string;
   detectedChords: string[];
   reviewReasons: string[];
   importQuality: SmartImportConfidence;
@@ -418,6 +421,144 @@ export async function analyzeSongPdf(file: File, _existingSongs: Song[] = []): P
     importQuality,
     suggestions,
   };
+}
+
+
+function dataUrlToBase64(dataUrl: string): string {
+  const commaIndex = dataUrl.indexOf(",");
+  return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read PDF file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function confidenceRank(value?: SmartImportConfidence): number {
+  if (value === "high") return 3;
+  if (value === "medium") return 2;
+  if (value === "low") return 1;
+  return 0;
+}
+
+function coerceConfidence(value: unknown): SmartImportConfidence {
+  const normalized = String(value ?? "").toLowerCase();
+  if (normalized === "high" || normalized === "medium" || normalized === "low") return normalized;
+  return "low";
+}
+
+function coerceSource(value: unknown, fallback: SmartImportSuggestion["source"]): SmartImportSuggestion["source"] {
+  const normalized = String(value ?? "").toLowerCase();
+  if (["filename", "pdf text", "inference", "ai/ocr", "music metadata", "duration estimate"].includes(normalized)) {
+    return normalized as SmartImportSuggestion["source"];
+  }
+  return fallback;
+}
+
+function suggestionFromApi(raw: any, fallbackSource: SmartImportSuggestion["source"]): SmartImportSuggestion | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === "string") return suggestion(raw, "medium", fallbackSource);
+  const value = typeof raw.value === "string" ? raw.value : raw.value == null ? "" : String(raw.value);
+  return suggestion(value, coerceConfidence(raw.confidence), coerceSource(raw.source, fallbackSource));
+}
+
+function shouldReplaceSuggestion(current: SmartImportSuggestion | undefined, incoming: SmartImportSuggestion | undefined): boolean {
+  if (!incoming?.value) return false;
+  if (!current?.value) return true;
+  return confidenceRank(incoming.confidence) >= confidenceRank(current.confidence);
+}
+
+function mergeAiSuggestions(current: SmartPdfImportResult, incoming: any): SmartPdfImportResult {
+  const next: SmartPdfImportResult = {
+    ...current,
+    aiEnhanced: true,
+    enhancementNotes: Array.isArray(incoming?.enhancementNotes) ? incoming.enhancementNotes.map(String) : [],
+    durationSource: incoming?.durationSource ? String(incoming.durationSource) : current.durationSource,
+    warnings: [...current.warnings, ...(Array.isArray(incoming?.warnings) ? incoming.warnings.map(String) : [])],
+    reviewReasons: Array.isArray(incoming?.reviewReasons) && incoming.reviewReasons.length
+      ? incoming.reviewReasons.map(String)
+      : current.reviewReasons,
+    detectedChords: current.detectedChords,
+    suggestions: { ...current.suggestions },
+  };
+
+  const fields = incoming?.suggestions ?? incoming?.fields ?? {};
+  const keys = [
+    "title",
+    "artist",
+    "key",
+    "capo",
+    "chords",
+    "strumming",
+    "tempo",
+    "duration",
+    "genre",
+    "mood",
+    "energy",
+    "vocalStyle",
+    "tags",
+    "performanceNote",
+    "ultimateGuitarUrl",
+  ] as const;
+
+  for (const key of keys) {
+    const fallbackSource: SmartImportSuggestion["source"] = key === "duration" ? "music metadata" : "ai/ocr";
+    const incomingSuggestion = suggestionFromApi(fields[key], fallbackSource);
+    if (shouldReplaceSuggestion(next.suggestions[key], incomingSuggestion)) {
+      next.suggestions[key] = incomingSuggestion;
+    }
+  }
+
+  if (Array.isArray(incoming?.detectedChords)) {
+    const merged = new Set<string>(next.detectedChords);
+    incoming.detectedChords.map(String).forEach((chord: string) => {
+      const normalized = normalizeChord(chord) ?? chord.trim();
+      if (normalized) merged.add(normalized);
+    });
+    next.detectedChords = Array.from(merged).slice(0, 24);
+  }
+
+  const textForTags = [current.textSample ?? "", next.suggestions.tags?.value ?? "", ...(next.enhancementNotes ?? [])].join("\n");
+  next.suggestions.tags = suggestion(mergeTags(next.suggestions.tags?.value, inferTags(textForTags, next.suggestions, current.readableTextFound)?.value), "medium", "inference");
+
+  if (!next.suggestions.performanceNote) {
+    next.suggestions.performanceNote = inferStageNote(current.fileName, next.suggestions, current.readableTextFound || !!next.aiEnhanced);
+  }
+
+  next.reviewReasons = calculateReviewReasons(next.suggestions, current.readableTextFound || !!next.aiEnhanced, next.detectedChords);
+  next.importQuality = calculateImportQuality(next.suggestions, current.readableTextFound || !!next.aiEnhanced, next.reviewReasons);
+  return next;
+}
+
+export async function enhanceSongPdfWithAi(file: File, current: SmartPdfImportResult, existingSongs: Song[] = []): Promise<SmartPdfImportResult> {
+  if (file.size > 12 * 1024 * 1024) {
+    throw new Error("AI/OCR import currently supports PDFs up to 12 MB. The PDF is still attached; enter details manually or compress the scan.");
+  }
+
+  const dataUrl = await fileToDataUrl(file);
+  const { supabase } = await import("./supabase");
+  const { data, error } = await supabase.functions.invoke("analyze-song-pdf", {
+    body: {
+      filename: file.name,
+      mimeType: file.type || "application/pdf",
+      fileBase64: dataUrlToBase64(dataUrl),
+      localTextSample: current.textSample ?? "",
+      localSuggestions: current.suggestions,
+      existingSongs: existingSongs.slice(0, 300).map((song) => ({ title: song.title, artist: song.artist })),
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || "The AI/OCR import function is not available yet.");
+  }
+  if (!data?.ok) {
+    throw new Error(data?.error || "AI/OCR could not analyze this PDF.");
+  }
+  return mergeAiSuggestions(current, data);
 }
 
 export function confidenceLabel(confidence: SmartImportConfidence): string {

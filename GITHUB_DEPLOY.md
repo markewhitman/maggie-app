@@ -222,3 +222,34 @@ No Supabase SQL migration is required for Phase 5.11. Scanned/image-only PDFs st
 Phase 5.12 refines Smart PDF Import with import-confidence scoring, detected-chord preview chips, better key/capo/duration parsing, review reasons, and a missing-essentials checklist. Song cards and the Song Library now show readiness/review indicators and a Needs Review quick filter.
 
 No Supabase SQL migration is required for Phase 5.12. Review state is stored with normal song tags such as `needs-review` and `imported-from-pdf`.
+
+## Phase 5.13 — AI/OCR PDF Import
+
+Phase 5.13 adds an optional Supabase Edge Function for scanned/image-only PDF import.
+
+Client-side deployment is still the normal flow:
+
+```powershell
+npm install
+npm run check
+npm run build:gh
+git add .
+git commit -m "Add AI OCR PDF song import"
+git push
+npm run deploy
+```
+
+The Edge Function must also be deployed separately with the Supabase CLI:
+
+```powershell
+supabase login
+supabase link --project-ref bephofcynjspsulmuikh
+supabase secrets set OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
+supabase secrets set OPENAI_MODEL="gpt-4.1-mini"
+supabase functions deploy analyze-song-pdf
+```
+
+No SQL migration is required for Phase 5.13.
+
+The browser app never stores the OpenAI API key. The key lives only in Supabase secrets. If the Edge Function is not deployed or the key is missing, the Add Song modal still works with the existing local Smart PDF Import path.
+
