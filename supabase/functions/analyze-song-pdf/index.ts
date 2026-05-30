@@ -180,7 +180,7 @@ function parseModelJson(text: string): AiJson {
   }
 }
 
-function buildPrompt(filename: string, localTextSample: string, localSuggestions: unknown): string {
+function buildPrompt(filename: string, localTextSample: string, localSuggestions: unknown, songContext?: unknown): string {
   return `You are helping a musician import a scanned or text-based song PDF into a setlist app.
 Return ONLY valid JSON. Do not include markdown.
 Extract practical song-card metadata for live performance. Do not quote or reproduce copyrighted lyrics; metadata, chord names, structure labels, and brief performance notes are okay.
@@ -196,12 +196,15 @@ Fields to return:
 Filename: ${filename}
 Local browser text sample, if any: ${localTextSample || "(none)"}
 Local browser suggestions: ${JSON.stringify(localSuggestions ?? {})}
+Existing song card being updated, if any: ${songContext ? JSON.stringify(songContext) : "(new song import)"}
+
+When an existing song card is provided, use it as context and only suggest changes that are supported by the PDF or reliable music metadata. If the PDF appears to be for a different song than the existing card, add a warning and review reason.
 
 Return shape example:
 {"title":"...","artist":"...","key":"G","capo":"Capo 2","chords":["G","D","Em","C"],"strumming":"D DU UDU","tempo":"104","duration":"3:48","durationKind":"estimated","genre":"Folk","mood":"warm","energy":"medium","vocalStyle":"singalong","tags":["acoustic","capo","needs-review"],"performanceNote":"Capo 2; watch the bridge change.","ultimateGuitarUrl":null,"detectedChords":["G","D","Em","C"],"reviewReasons":["Confirm duration estimate."],"warnings":[]}`;
 }
 
-async function callOpenAI(filename: string, mimeType: string, fileBase64: string, localTextSample: string, localSuggestions: unknown): Promise<AiJson> {
+async function callOpenAI(filename: string, mimeType: string, fileBase64: string, localTextSample: string, localSuggestions: unknown, songContext?: unknown): Promise<AiJson> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("OPENAI_API_KEY is not set for this Supabase project.");
   const model = Deno.env.get("OPENAI_MODEL") || "gpt-4.1-mini";
@@ -212,7 +215,7 @@ async function callOpenAI(filename: string, mimeType: string, fileBase64: string
       {
         role: "user",
         content: [
-          { type: "input_text", text: buildPrompt(filename, localTextSample, localSuggestions) },
+          { type: "input_text", text: buildPrompt(filename, localTextSample, localSuggestions, songContext) },
           { type: "input_file", filename, file_data: `data:${mimeType || "application/pdf"};base64,${fileBase64}` },
         ],
       },
@@ -254,7 +257,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: "PDF is too large for AI/OCR import. Compress the scan or enter details manually." }, 413);
     }
 
-    const ai = await callOpenAI(filename, mimeType, fileBase64, localTextSample, body.localSuggestions);
+    const ai = await callOpenAI(filename, mimeType, fileBase64, localTextSample, body.localSuggestions, body.songContext);
     const title = cleanString(ai.title);
     const artist = cleanString(ai.artist);
     const enhancementNotes: string[] = [];

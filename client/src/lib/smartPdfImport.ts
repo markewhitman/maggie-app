@@ -534,7 +534,7 @@ function mergeAiSuggestions(current: SmartPdfImportResult, incoming: any): Smart
   return next;
 }
 
-export async function enhanceSongPdfWithAi(file: File, current: SmartPdfImportResult, existingSongs: Song[] = []): Promise<SmartPdfImportResult> {
+export async function enhanceSongPdfWithAi(file: File, current: SmartPdfImportResult, existingSongs: Song[] = [], songContext?: Partial<Song>): Promise<SmartPdfImportResult> {
   if (file.size > 12 * 1024 * 1024) {
     throw new Error("AI/OCR import currently supports PDFs up to 12 MB. The PDF is still attached; enter details manually or compress the scan.");
   }
@@ -549,6 +549,24 @@ export async function enhanceSongPdfWithAi(file: File, current: SmartPdfImportRe
       localTextSample: current.textSample ?? "",
       localSuggestions: current.suggestions,
       existingSongs: existingSongs.slice(0, 300).map((song) => ({ title: song.title, artist: song.artist })),
+      songContext: songContext ? {
+        id: songContext.id,
+        title: songContext.title,
+        artist: songContext.artist,
+        key: songContext.key,
+        capo: songContext.capo,
+        chords: songContext.chords,
+        strumming: songContext.strumming,
+        tempo: songContext.tempo,
+        duration: songContext.duration,
+        genre: songContext.genre,
+        mood: songContext.mood,
+        energy: songContext.energy,
+        vocalStyle: songContext.vocalStyle,
+        tags: songContext.tags,
+        performanceNote: songContext.performanceNote,
+        ultimateGuitarUrl: songContext.ultimateGuitarUrl,
+      } : undefined,
     },
   });
 

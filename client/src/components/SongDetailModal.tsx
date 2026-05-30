@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState, useRef, useCallback, useEffect } from "react";
 import type { Song, PerformanceNote } from "@/lib/data";
 import { formatDuration } from "@/lib/data";
+import { analyzeSongPdf, enhanceSongPdfWithAi, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
 import { sbPdfs, sbSongPdfs, sbPerfNotes, sbSongs, type SbPerfNote } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
-  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2, UserPlus, Tag, Mic2
+  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2, UserPlus, Tag, Mic2, Sparkles, Wand2, CheckCircle2, AlertTriangle
 } from "lucide-react";
 const FullscreenPdfViewer = lazy(() =>
   import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
@@ -28,6 +29,76 @@ interface Props {
   onDelete?: (id: string) => void | Promise<void>;
   onEdit?: (updated: Song) => void; // if provided, shows Edit tab
   defaultTab?: "info" | "pdf" | "history" | "edit";
+}
+
+
+const MAX_AI_PDF_BYTES = 12 * 1024 * 1024;
+
+function parseDurationSuggestion(raw?: string): number | undefined {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return undefined;
+  const parts = trimmed.split(":").map((part) => part.trim());
+  if (parts.length === 1) {
+    const minutes = Number(parts[0]);
+    return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined;
+  }
+  if (parts.length === 2) {
+    const minutes = Number(parts[0]);
+    const seconds = Number(parts[1]);
+    if (Number.isFinite(minutes) && Number.isFinite(seconds) && minutes >= 0 && seconds >= 0) {
+      return Math.round(minutes * 60 + Math.min(seconds, 59));
+    }
+  }
+  return undefined;
+}
+
+function suggestionTone(confidence: SmartImportSuggestion["confidence"]): string {
+  if (confidence === "high") return "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100";
+  if (confidence === "medium") return "border-amber-300/50 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100";
+  return "border-border bg-muted/50 text-muted-foreground";
+}
+
+function qualityTone(confidence: SmartImportSuggestion["confidence"]): string {
+  if (confidence === "high") return "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100";
+  if (confidence === "medium") return "border-amber-300/50 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100";
+  return "border-red-300/50 bg-red-50 text-red-900 dark:bg-red-900/20 dark:text-red-100";
+}
+
+function mergeTagArray(current: string[] = [], incoming?: string): string[] {
+  const tags = new Set(current.map((tag) => tag.trim()).filter(Boolean));
+  incoming?.split(",").map((tag) => tag.trim()).filter(Boolean).forEach((tag) => tags.add(tag));
+  return Array.from(tags);
+}
+
+function isMissingSongValue(song: Song, field: keyof Song): boolean {
+  const value = song[field];
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "" || value.trim().toLowerCase() === "unknown";
+  if (typeof value === "number") return !Number.isFinite(value) || value <= 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function ExistingSongSuggestionRow({ label, current, suggestion }: { label: string; current?: string | number; suggestion?: SmartImportSuggestion }) {
+  if (!suggestion) return null;
+  const currentText = String(current ?? "").trim();
+  const changed = currentText && currentText.toLowerCase() !== suggestion.value.toLowerCase();
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/70 px-2.5 py-2 text-xs space-y-1.5">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+        <div className="sm:w-28 font-semibold text-muted-foreground">{label}</div>
+        <div className="flex-1 min-w-0 font-medium break-words">{suggestion.value}</div>
+        <Badge variant="outline" className={`w-fit text-[10px] ${suggestionTone(suggestion.confidence)}`}>
+          {confidenceLabel(suggestion.confidence)} · {suggestion.source}
+        </Badge>
+      </div>
+      {currentText && (
+        <div className={`pl-0 sm:pl-28 text-[11px] ${changed ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+          Current: {currentText}{changed ? " · suggested update" : " · matches current"}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const DIFF_COLORS: Record<string, string> = {
@@ -230,6 +301,14 @@ function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) =>
   );
 }
 
+
+async function fetchCurrentPdfFile(pdfUrl: string, filename: string): Promise<File> {
+  const response = await fetch(pdfUrl);
+  if (!response.ok) throw new Error(`Could not fetch the attached PDF (${response.status}).`);
+  const blob = await response.blob();
+  return new File([blob], filename || "sheet-music.pdf", { type: blob.type || "application/pdf" });
+}
+
 // ─── Main Modal ───────────────────────────────────────────
 
 export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, defaultTab = "info" }: Props) {
@@ -241,6 +320,9 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
   const [fullscreenPdf, setFullscreenPdf] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [analyzingImport, setAnalyzingImport] = useState(false);
+  const [enhancingImport, setEnhancingImport] = useState(false);
+  const [smartImport, setSmartImport] = useState<SmartPdfImportResult | null>(null);
   const [perfHistory, setPerfHistory] = useState<PerformanceNote[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -265,25 +347,158 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
       .catch(() => setPerfHistory([]));
   }, [initialSong.id]);
 
+  const analyzePdfForSongUpdates = useCallback(async (file: File, options: { autoEnhanceScans?: boolean } = {}) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast({ title: "PDF is too large to analyze", description: "The file is attached, but analysis is limited to PDFs under 20 MB.", variant: "destructive" });
+      return;
+    }
+
+    setAnalyzingImport(true);
+    setSmartImport(null);
+    try {
+      const localResult = await analyzeSongPdf(file, [song]);
+      setSmartImport(localResult);
+
+      if (!localResult.readableTextFound && options.autoEnhanceScans !== false) {
+        if (file.size > MAX_AI_PDF_BYTES) {
+          toast({
+            title: "PDF attached; AI/OCR skipped",
+            description: "This scan is over 12 MB. Compress it or use Analyze PDF manually after replacing with a smaller file.",
+          });
+          return;
+        }
+
+        setEnhancingImport(true);
+        const enhanced = await enhanceSongPdfWithAi(file, localResult, [song], song);
+        setSmartImport(enhanced);
+        toast({ title: "AI/OCR suggestions ready", description: "Review the suggested updates before applying them to this song card." });
+        return;
+      }
+
+      toast({
+        title: localResult.readableTextFound ? "PDF scanned for song details" : "PDF attached",
+        description: localResult.readableTextFound
+          ? "Review suggested updates before applying them to this song card."
+          : "No selectable text was found. Use AI/OCR to read the scanned pages.",
+      });
+    } catch (err: any) {
+      toast({ title: "PDF analysis failed", description: err?.message ?? "The PDF was attached, but analysis failed.", variant: "destructive" });
+    } finally {
+      setAnalyzingImport(false);
+      setEnhancingImport(false);
+    }
+  }, [song, toast]);
+
+  const enhanceCurrentImport = useCallback(async () => {
+    if (!smartImport) return;
+    try {
+      setEnhancingImport(true);
+      const file = song.pdfUrl
+        ? await fetchCurrentPdfFile(song.pdfUrl, song.pdfFilename || `${song.title}.pdf`)
+        : null;
+      if (!file) throw new Error("No PDF is attached to this song.");
+      const enhanced = await enhanceSongPdfWithAi(file, smartImport, [song], song);
+      setSmartImport(enhanced);
+      toast({ title: "AI/OCR suggestions ready", description: "Review the suggestions before applying them." });
+    } catch (err: any) {
+      toast({ title: "AI/OCR failed", description: err?.message ?? "Could not analyze this PDF.", variant: "destructive" });
+    } finally {
+      setEnhancingImport(false);
+    }
+  }, [smartImport, song, toast]);
+
+  const analyzeExistingPdf = useCallback(async () => {
+    if (!song.pdfUrl) return;
+    try {
+      setAnalyzingImport(true);
+      const file = await fetchCurrentPdfFile(song.pdfUrl, song.pdfFilename || `${song.title}.pdf`);
+      await analyzePdfForSongUpdates(file, { autoEnhanceScans: true });
+    } catch (err: any) {
+      toast({ title: "Could not read PDF", description: err?.message ?? "Try replacing the PDF and analyzing again.", variant: "destructive" });
+    } finally {
+      setAnalyzingImport(false);
+    }
+  }, [analyzePdfForSongUpdates, song.pdfFilename, song.pdfUrl, song.title, toast]);
+
+  const applySmartImportToSong = useCallback(async (overwrite: boolean) => {
+    if (!smartImport) return;
+    const s = smartImport.suggestions;
+    const updated: Song = { ...song };
+    const applyString = (field: keyof Song, value?: string) => {
+      if (!value) return;
+      if (overwrite || isMissingSongValue(updated, field)) {
+        (updated as any)[field] = value;
+      }
+    };
+
+    applyString("title", s.title?.value);
+    applyString("artist", s.artist?.value);
+    applyString("key", s.key?.value);
+    applyString("capo", s.capo?.value);
+    applyString("chords", s.chords?.value);
+    applyString("strumming", s.strumming?.value);
+    applyString("genre", s.genre?.value);
+    applyString("mood", s.mood?.value);
+    applyString("energy", s.energy?.value as Song["energy"] | undefined);
+    applyString("vocalStyle", s.vocalStyle?.value as Song["vocalStyle"] | undefined);
+    applyString("ultimateGuitarUrl", s.ultimateGuitarUrl?.value);
+
+    const tempoValue = s.tempo?.value ? Number(String(s.tempo.value).match(/\d+/)?.[0]) : undefined;
+    if (tempoValue && (overwrite || !updated.tempo)) updated.tempo = tempoValue;
+
+    const durationValue = parseDurationSuggestion(s.duration?.value);
+    if (durationValue && (overwrite || !updated.duration)) updated.duration = durationValue;
+
+    if (s.tags?.value) updated.tags = mergeTagArray(updated.tags, s.tags.value);
+
+    if (s.performanceNote?.value) {
+      if (overwrite || !updated.performanceNote?.trim()) {
+        updated.performanceNote = s.performanceNote.value;
+      } else if (!updated.performanceNote.toLowerCase().includes(s.performanceNote.value.toLowerCase())) {
+        updated.performanceNote = `${updated.performanceNote}\n\nPDF import note: ${s.performanceNote.value}`;
+      }
+    }
+
+    if (!updated.tags.includes("ai-reviewed")) updated.tags = mergeTagArray(updated.tags, "ai-reviewed");
+
+    try {
+      await sbSongs.upsert(updated);
+      setSong(updated);
+      onEdit?.(updated);
+      toast({
+        title: overwrite ? "Song card updated" : "Missing details filled",
+        description: "Review the song card before using it live.",
+      });
+    } catch (err: any) {
+      toast({ title: "Could not save updates", description: err?.message ?? "Try again when you are online.", variant: "destructive" });
+    }
+  }, [onEdit, smartImport, song, toast]);
+
   const handleUpload = useCallback(async (file: File) => {
     if (!file.name.endsWith(".pdf") && file.type !== "application/pdf") {
       toast({ title: "PDF files only", variant: "destructive" });
       return;
     }
     setUploading(true);
+    let uploaded = false;
     try {
       const publicUrl = await sbPdfs.upload(song.id, file);
       // Save URL to Supabase so all devices can find it
       await sbSongPdfs.save(song.id, publicUrl, file.name);
       await sbSongs.updatePdf(song.id, publicUrl, file.name).catch(() => undefined);
       setSong((prev) => ({ ...prev, pdfUrl: publicUrl, pdfFilename: file.name, pdfAssetId: undefined }));
-      toast({ title: "PDF uploaded!", description: file.name });
+      uploaded = true;
+      toast({ title: "PDF uploaded!", description: `${file.name} — scanning for song-card updates…` });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
       setUploading(false);
     }
-  }, [song.id]);
+
+    if (uploaded) {
+      await analyzePdfForSongUpdates(file, { autoEnhanceScans: true });
+    }
+  }, [analyzePdfForSongUpdates, song.id, toast]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -575,17 +790,29 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                   </div>
                 </div>
 
-                {/* Replace PDF */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  Replace PDF
-                </Button>
+                {/* PDF tools */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading || analyzingImport || enhancingImport}
+                  >
+                    {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    Replace PDF
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={analyzeExistingPdf}
+                    disabled={uploading || analyzingImport || enhancingImport}
+                  >
+                    {analyzingImport || enhancingImport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {enhancingImport ? "AI/OCR scanning…" : analyzingImport ? "Scanning…" : "Analyze PDF"}
+                  </Button>
+                </div>
               </>
             ) : (
               /* Upload zone */
@@ -625,6 +852,96 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                       Open on Ultimate Guitar
                     </Button>
                   </a>
+                </div>
+              </div>
+            )}
+
+            {(analyzingImport || enhancingImport) && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary mt-0.5" />
+                <div>
+                  <div className="font-semibold text-sm">Scanning PDF for song-card details</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {enhancingImport ? "AI/OCR is reading scanned pages and estimating missing details." : "Reading filename and selectable PDF text."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {smartImport && (
+              <div className="rounded-2xl border border-primary/25 bg-primary/5 p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                      PDF song-card suggestions
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Review these before applying. Use <span className="font-semibold">Fill missing</span> to preserve existing details, or <span className="font-semibold">Apply suggestions</span> to update existing fields too.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className={`text-[10px] ${qualityTone(smartImport.importQuality)}`}>
+                      {confidenceLabel(smartImport.importQuality)} confidence
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {smartImport.aiEnhanced ? "AI/OCR enhanced" : smartImport.readableTextFound ? "Readable text" : "Filename only"}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <ExistingSongSuggestionRow label="Title" current={song.title} suggestion={smartImport.suggestions.title} />
+                  <ExistingSongSuggestionRow label="Artist" current={song.artist} suggestion={smartImport.suggestions.artist} />
+                  <ExistingSongSuggestionRow label="Key" current={song.key} suggestion={smartImport.suggestions.key} />
+                  <ExistingSongSuggestionRow label="Capo" current={song.capo} suggestion={smartImport.suggestions.capo} />
+                  <ExistingSongSuggestionRow label="Chords" current={song.chords} suggestion={smartImport.suggestions.chords} />
+                  <ExistingSongSuggestionRow label="Strumming" current={song.strumming} suggestion={smartImport.suggestions.strumming} />
+                  <ExistingSongSuggestionRow label="Tempo" current={song.tempo ? `${song.tempo} BPM` : ""} suggestion={smartImport.suggestions.tempo} />
+                  <ExistingSongSuggestionRow label="Duration" current={song.duration ? formatDuration(song.duration) : ""} suggestion={smartImport.suggestions.duration} />
+                  <ExistingSongSuggestionRow label="Genre" current={song.genre} suggestion={smartImport.suggestions.genre} />
+                  <ExistingSongSuggestionRow label="Mood" current={song.mood} suggestion={smartImport.suggestions.mood} />
+                  <ExistingSongSuggestionRow label="Tags" current={song.tags.join(", ")} suggestion={smartImport.suggestions.tags} />
+                  <ExistingSongSuggestionRow label="Stage note" current={song.performanceNote} suggestion={smartImport.suggestions.performanceNote} />
+                </div>
+
+                {smartImport.detectedChords.length > 0 && (
+                  <div className="rounded-xl border border-border bg-background/70 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="text-xs font-semibold text-muted-foreground">Detected chord preview</div>
+                      <Badge variant="outline" className="text-[10px]">{smartImport.detectedChords.length} found</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {smartImport.detectedChords.slice(0, 18).map((chord) => (
+                        <Badge key={chord} variant="secondary" className="font-mono text-xs">{chord}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(smartImport.reviewReasons.length > 0 || smartImport.warnings.length > 0 || smartImport.enhancementNotes?.length) && (
+                  <div className="rounded-xl border border-amber-300/40 bg-amber-50/70 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-100 space-y-1">
+                    <div className="font-semibold flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Review notes</div>
+                    {[...smartImport.reviewReasons, ...smartImport.warnings, ...(smartImport.enhancementNotes ?? [])].slice(0, 6).map((note) => (
+                      <div key={note}>• {note}</div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <Button size="sm" className="gap-1.5" onClick={() => applySmartImportToSong(false)}>
+                    <CheckCircle2 className="w-4 h-4" /> Fill missing
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => applySmartImportToSong(true)}>
+                    <Wand2 className="w-4 h-4" /> Apply suggestions
+                  </Button>
+                  {!smartImport.aiEnhanced && (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={enhanceCurrentImport} disabled={enhancingImport || analyzingImport}>
+                      {enhancingImport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      AI/OCR enhance
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => setSmartImport(null)}>Dismiss</Button>
                 </div>
               </div>
             )}

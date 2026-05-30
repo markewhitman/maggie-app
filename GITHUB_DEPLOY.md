@@ -253,3 +253,14 @@ No SQL migration is required for Phase 5.13.
 
 The browser app never stores the OpenAI API key. The key lives only in Supabase secrets. If the Edge Function is not deployed or the key is missing, the Add Song modal still works with the existing local Smart PDF Import path.
 
+
+
+## Phase 5.13.1 note — AI/OCR updates for existing song PDFs
+
+Existing song cards can now scan newly attached/replaced PDFs and use the existing `analyze-song-pdf` Edge Function to suggest updates for missing or outdated song-card details. The web deployment is not enough for this phase; after committing/pushing/deploying the app, redeploy the Edge Function:
+
+```powershell
+npx supabase functions deploy analyze-song-pdf --project-ref bephofcynjspsulmuikh
+```
+
+No database migration is required for this phase.
