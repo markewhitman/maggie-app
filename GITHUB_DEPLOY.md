@@ -264,3 +264,9 @@ npx supabase functions deploy analyze-song-pdf --project-ref bephofcynjspsulmuik
 ```
 
 No database migration is required for this phase.
+
+## Phase 5.14 — Pedal / Keyboard Performance Controls
+
+Phase 5.14 adds keyboard and Bluetooth page-turner support for Stage, Performance Mode, and the fullscreen PDF viewer. Settings now includes a Performance Controls toggle and shortcut reference. Stage and PDF viewer surfaces also include on-screen shortcut help.
+
+No Supabase SQL migration is required for Phase 5.14.

@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Eraser,
   ExternalLink,
+  Keyboard,
   Loader2,
   Pencil,
   Rows3,
@@ -27,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { sbPdfAnnotations, type PdfAnnotationStroke } from "@/lib/supabase";
+import { PDF_SHORTCUTS, performanceControlsStore, shouldIgnorePerformanceShortcut } from "@/lib/performanceControls";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
@@ -284,6 +286,7 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
   const [strokes, setStrokes] = useState<PdfAnnotationStroke[]>([]);
   const [annotationsLoaded, setAnnotationsLoaded] = useState(false);
   const [annotationMessage, setAnnotationMessage] = useState("");
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [pageAspects, setPageAspects] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -315,21 +318,6 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
   const goNext = useCallback(() => {
     setPageNumber((page) => clampPage(page + 1, numPages));
   }, [numPages]);
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (annotationMode && event.key !== "Escape") return;
-      if (event.key === "ArrowRight" || (viewMode === "page" && event.key === "ArrowDown")) {
-        goNext();
-      } else if (event.key === "ArrowLeft" || (viewMode === "page" && event.key === "ArrowUp")) {
-        goPrev();
-      } else if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [annotationMode, goNext, goPrev, onClose, viewMode]);
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -463,6 +451,70 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
     setAnnotationMessage("Saving…");
   }, [pageNumber]);
 
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (shouldIgnorePerformanceShortcut(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const shortcutsEnabled = performanceControlsStore.isEnabled();
+      const key = event.key;
+      const lowerKey = key.toLowerCase();
+      const isNextKey = key === "ArrowRight" || key === "PageDown" || key === " " || (viewMode === "page" && key === "ArrowDown");
+      const isPrevKey = key === "ArrowLeft" || key === "PageUp" || (viewMode === "page" && key === "ArrowUp");
+
+      if (key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (!shortcutsEnabled) return;
+
+      if (lowerKey === "?" || (key === "/" && event.shiftKey)) {
+        event.preventDefault();
+        setShowShortcutHelp((value) => !value);
+        return;
+      }
+
+      if (lowerKey === "f") {
+        event.preventDefault();
+        setFitMode((mode) => (mode === "page" ? "width" : "page"));
+        return;
+      }
+
+      if (lowerKey === "v") {
+        event.preventDefault();
+        setViewMode((mode) => (mode === "page" ? "scroll" : "page"));
+        return;
+      }
+
+      if (lowerKey === "n") {
+        event.preventDefault();
+        setAnnotationMode((value) => !value);
+        return;
+      }
+
+      if (lowerKey === "z") {
+        event.preventDefault();
+        undoLastStroke();
+        return;
+      }
+
+      if (annotationMode) return;
+
+      if (isNextKey) {
+        event.preventDefault();
+        goNext();
+      } else if (isPrevKey) {
+        event.preventDefault();
+        goPrev();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [annotationMode, goNext, goPrev, onClose, undoLastStroke, viewMode]);
+
+
   const handleScroll = useCallback(() => {
     if (viewMode !== "scroll" || !scrollAreaRef.current) return;
     const scrollRect = scrollAreaRef.current.getBoundingClientRect();
@@ -549,6 +601,15 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
             Notes
           </button>
 
+          <button
+            onClick={() => setShowShortcutHelp((value) => !value)}
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/65 hover:text-white transition-colors"
+            title="Show PDF shortcuts"
+            aria-label="Show PDF shortcuts"
+          >
+            <Keyboard className="w-4 h-4" />
+          </button>
+
           <a
             href={pdfUrl}
             target="_blank"
@@ -612,6 +673,28 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
             <button onClick={clearCurrentPage} className="h-9 px-3 rounded-full bg-red-500/20 text-red-100 text-xs inline-flex items-center gap-1.5">
               <Trash2 className="w-3.5 h-3.5" /> Clear page
             </button>
+          </div>
+        </div>
+      )}
+
+      {showShortcutHelp && (
+        <div className="absolute right-3 top-16 z-[10000] w-[min(92vw,360px)] rounded-2xl border border-white/15 bg-black/90 p-4 shadow-2xl backdrop-blur text-white">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <div className="text-sm font-bold">PDF keyboard / pedal controls</div>
+              <div className="text-xs text-white/45">Most Bluetooth page-turners send these same keys.</div>
+            </div>
+            <button onClick={() => setShowShortcutHelp(false)} className="rounded-full p-1 text-white/60 hover:text-white hover:bg-white/10">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {PDF_SHORTCUTS.map((shortcut) => (
+              <div key={shortcut.keys} className="flex items-center justify-between gap-3 rounded-lg bg-white/5 px-3 py-2 text-xs">
+                <span className="font-mono font-bold text-amber-200">{shortcut.keys}</span>
+                <span className="text-white/75 text-right">{shortcut.action}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

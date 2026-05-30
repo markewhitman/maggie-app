@@ -1,14 +1,30 @@
 import { useState } from "react";
-import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck, Moon, Sun, Palette as PaletteIcon } from "lucide-react";
+import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck, Moon, Sun, Palette as PaletteIcon, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { createMaggieBackup, downloadBackup } from "@/lib/backup";
 import { PALETTES, useTheme } from "@/components/ThemeProvider";
+import { PDF_SHORTCUTS, STAGE_SHORTCUTS, performanceControlsStore } from "@/lib/performanceControls";
 
 export default function SettingsPage() {
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
   const { theme, palette, setTheme, setPalette } = useTheme();
+  const [performanceControlsEnabled, setPerformanceControlsEnabled] = useState(() =>
+    performanceControlsStore.isEnabled(),
+  );
+
+  const togglePerformanceControls = () => {
+    const next = !performanceControlsEnabled;
+    performanceControlsStore.setEnabled(next);
+    setPerformanceControlsEnabled(next);
+    toast({
+      title: next ? "Performance controls enabled" : "Performance controls disabled",
+      description: next
+        ? "Keyboard and Bluetooth pedal shortcuts are active in Stage and PDFs."
+        : "Stage and PDF shortcut keys are turned off on this device.",
+    });
+  };
 
   const handleExportBackup = async () => {
     setExporting(true);
@@ -99,6 +115,54 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Performance controls */}
+      <div className="bg-card border border-border rounded-xl p-5 mb-4 space-y-4">
+        <div className="flex items-start gap-3">
+          <Keyboard className="w-5 h-5 text-primary mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-sm">Performance Controls</div>
+            <div className="text-xs text-muted-foreground">Keyboard and Bluetooth page-turner shortcuts for Stage and sheet music</div>
+          </div>
+          <Button
+            type="button"
+            variant={performanceControlsEnabled ? "default" : "outline"}
+            size="sm"
+            onClick={togglePerformanceControls}
+          >
+            {performanceControlsEnabled ? "Enabled" : "Off"}
+          </Button>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-border bg-muted/25 p-3">
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">Stage / Performance</div>
+            <div className="space-y-1.5">
+              {STAGE_SHORTCUTS.slice(0, 8).map((shortcut) => (
+                <div key={shortcut.keys} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-mono font-bold text-primary whitespace-nowrap">{shortcut.keys}</span>
+                  <span className="text-muted-foreground text-right">{shortcut.action}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/25 p-3">
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">PDF / Sheet Music</div>
+            <div className="space-y-1.5">
+              {PDF_SHORTCUTS.slice(0, 8).map((shortcut) => (
+                <div key={shortcut.keys} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-mono font-bold text-primary whitespace-nowrap">{shortcut.keys}</span>
+                  <span className="text-muted-foreground text-right">{shortcut.action}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Bluetooth pedals usually act like small keyboards. Set the pedal to send Arrow, PageDown, PageUp, or Space and Maggie will respond without additional pairing code.
+        </p>
       </div>
 
       {/* PDF Storage */}

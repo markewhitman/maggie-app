@@ -79,12 +79,14 @@ import {
   Info,
   Music2,
   Clock,
+  Keyboard,
   QrCode,
   ListMusic,
   Timer,
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
+import { STAGE_SHORTCUTS, performanceControlsStore, shouldIgnorePerformanceShortcut } from "@/lib/performanceControls";
 
 const FullscreenPdfViewer = lazy(() =>
   import("@/components/FullscreenPdfViewer").then((mod) => ({
@@ -840,6 +842,42 @@ function GlanceView({
 }
 
 
+// ─── Keyboard Shortcut Help ──────────────────────────────
+
+function StageShortcutHelpDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Keyboard className="w-5 h-5 text-primary" /> Performance shortcuts
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            These controls work from Stage and Performance Mode when keyboard/pedal controls are enabled.
+            Most Bluetooth page-turners send Arrow, PageUp/PageDown, or Space keystrokes.
+          </p>
+          <div className="grid gap-2">
+            {STAGE_SHORTCUTS.map((shortcut) => (
+              <div key={shortcut.keys} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/35 px-3 py-2 text-sm">
+                <span className="font-mono font-bold text-primary whitespace-nowrap">{shortcut.keys}</span>
+                <span className="text-muted-foreground text-right">{shortcut.action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Performance Mode ────────────────────────────────────
 
 function PerformanceModeView({
@@ -882,6 +920,7 @@ function PerformanceModeView({
   onOpenRequests: () => void;
 }) {
   const [showFullSet, setShowFullSet] = useState(false);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -896,6 +935,60 @@ function PerformanceModeView({
         ? "skipped"
         : "pending"
     : "pending";
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!performanceControlsStore.isEnabled()) return;
+      if (shouldIgnorePerformanceShortcut(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key;
+      const lowerKey = key.toLowerCase();
+
+      if (key === "Escape") {
+        event.preventDefault();
+        if (showShortcutHelp) setShowShortcutHelp(false);
+        else onClose();
+        return;
+      }
+
+      if (lowerKey === "?" || (key === "/" && event.shiftKey)) {
+        event.preventDefault();
+        setShowShortcutHelp((value) => !value);
+        return;
+      }
+
+      if (!currentSong) return;
+
+      if (key === "Enter" || lowerKey === "d") {
+        event.preventDefault();
+        if (currentStatus === "pending") onMarkPlayed();
+      } else if (lowerKey === "s") {
+        event.preventDefault();
+        if (currentStatus === "pending") onMarkSkipped();
+      } else if (lowerKey === "u") {
+        event.preventDefault();
+        onUndo(currentSong.id);
+      } else if (lowerKey === "m") {
+        event.preventDefault();
+        if (hasPdf) onOpenSheet();
+      } else if (lowerKey === "n") {
+        event.preventDefault();
+        onAddNote();
+      } else if (lowerKey === "r") {
+        event.preventDefault();
+        onOpenRequests();
+      } else if (lowerKey === "l") {
+        event.preventDefault();
+        setShowFullSet((value) => !value);
+      } else if (lowerKey === "p") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenSheet, onUndo, showShortcutHelp]);
 
   return (
     <div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden">
@@ -921,11 +1014,36 @@ function PerformanceModeView({
             <ListMusic className="w-4 h-4" /> Set
             {showFullSet ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowShortcutHelp((value) => !value)} className="gap-1.5 h-10">
+            <Keyboard className="w-4 h-4" /> Keys
+          </Button>
           <Button variant="ghost" size="sm" onClick={onClose} className="h-10">
             <X className="w-4 h-4" />
           </Button>
         </div>
       </div>
+
+      {showShortcutHelp && (
+        <div className="absolute right-4 top-20 z-[55] w-[min(92vw,400px)] rounded-2xl border border-border bg-card p-4 shadow-2xl">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <div className="font-semibold text-sm">Performance shortcuts</div>
+              <div className="text-xs text-muted-foreground">Keyboard and Bluetooth pedal actions.</div>
+            </div>
+            <button onClick={() => setShowShortcutHelp(false)} className="rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid gap-1.5">
+            {STAGE_SHORTCUTS.map((shortcut) => (
+              <div key={shortcut.keys} className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2 text-xs">
+                <span className="font-mono font-bold text-primary whitespace-nowrap">{shortcut.keys}</span>
+                <span className="text-muted-foreground text-right">{shortcut.action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {currentSong ? (
@@ -1345,6 +1463,7 @@ export default function StagePage() {
   const [cardSong, setCardSong] = useState<Song | null>(null);
   const [showEditSetlist, setShowEditSetlist] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [requests, setRequests] = useState<SbRequest[]>([]);
   const [perfNotes, setPerfNotes] = useState<PerformanceNote[]>([]);
   const [pdfMap, setPdfMap] = useState<
@@ -1556,6 +1675,9 @@ export default function StagePage() {
     (s) => !playedIds.includes(s.id) && !skippedIds.includes(s.id),
   );
   const nextSong = pendingSongs[0] ?? null;
+  const nextSongHasPdf = nextSong
+    ? !!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl)
+    : false;
 
   const getStatus = (song: Song): "played" | "skipped" | "pending" => {
     if (playedIds.includes(song.id)) return "played";
@@ -1652,6 +1774,77 @@ export default function StagePage() {
     setShowEditSetlist(false);
   };
 
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!session || !performanceControlsStore.isEnabled()) return;
+      if (shouldIgnorePerformanceShortcut(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const modalOpen = Boolean(
+        fullscreenPdfSong ||
+          noteModalSong ||
+          cardSong ||
+          sheetSong ||
+          showEditSetlist ||
+          showAudienceShare,
+      );
+      if (modalOpen) return;
+
+      const key = event.key;
+      const lowerKey = key.toLowerCase();
+
+      if (key === "Escape") {
+        if (showShortcutHelp) {
+          event.preventDefault();
+          setShowShortcutHelp(false);
+        } else if (showRequests) {
+          event.preventDefault();
+          setShowRequests(false);
+        } else if (performanceMode) {
+          event.preventDefault();
+          setPerformanceMode(false);
+        }
+        return;
+      }
+
+      if (lowerKey === "?" || (key === "/" && event.shiftKey)) {
+        event.preventDefault();
+        setShowShortcutHelp((value) => !value);
+        return;
+      }
+
+      if (performanceMode) return;
+      if (!nextSong) return;
+
+      if (key === "Enter" || lowerKey === "d") {
+        event.preventDefault();
+        markPlayed(nextSong.id);
+      } else if (lowerKey === "s") {
+        event.preventDefault();
+        markSkipped(nextSong.id);
+      } else if (lowerKey === "u") {
+        event.preventDefault();
+        undo(nextSong.id);
+      } else if (lowerKey === "m") {
+        event.preventDefault();
+        if (nextSongHasPdf) setFullscreenPdfSong(nextSong);
+        else setSheetSong(nextSong);
+      } else if (lowerKey === "n") {
+        event.preventDefault();
+        setNoteModalSong(nextSong);
+      } else if (lowerKey === "p") {
+        event.preventDefault();
+        setPerformanceMode(true);
+      } else if (lowerKey === "r") {
+        event.preventDefault();
+        setShowRequests(true);
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cardSong, fullscreenPdfSong, nextSong, nextSongHasPdf, noteModalSong, performanceMode, session, sheetSong, showAudienceShare, showEditSetlist, showRequests, showShortcutHelp]);
+
   if (sessionLoading) {
     return (
       <div className="text-center py-20 text-muted-foreground">
@@ -1735,13 +1928,10 @@ export default function StagePage() {
     : null;
   const audienceScope = requestScopeId ?? session.setlistId;
   const audienceShareUrl = audienceUrlForScope(audienceScope);
-  const nextSongHasPdf = nextSong
-    ? !!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl)
-    : false;
-
   return (
     <div>
       {ConfirmDialog}
+      <StageShortcutHelpDialog open={showShortcutHelp} onClose={() => setShowShortcutHelp(false)} />
 
       {/* Header */}
       <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-start lg:justify-between">
@@ -1867,6 +2057,15 @@ export default function StagePage() {
             className="gap-1.5"
           >
             <Maximize2 className="w-3.5 h-3.5" /> At-a-Glance
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowShortcutHelp(true)}
+            className="gap-1.5"
+            title="Show keyboard and Bluetooth pedal controls"
+          >
+            <Keyboard className="w-3.5 h-3.5" /> Keys
           </Button>
           {(playedIds.length > 0 || skippedIds.length > 0) && (
             <Button
