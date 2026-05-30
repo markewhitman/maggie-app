@@ -1,8 +1,9 @@
 import type { Song } from "@/lib/data";
 import { formatDuration } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
-import { Clock, FileText, Guitar, ListPlus, Music, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileText, Guitar, ListPlus, Music, UserPlus, Zap } from "lucide-react";
 import { StrumPattern } from "@/components/StrumPattern";
+import { getSongReadinessIssues, normalizeSongTags, readinessLabel, songNeedsReview } from "@/lib/songReadiness";
 
 interface SongCardProps {
   song: Song;
@@ -26,15 +27,6 @@ const TEMPO_ICON = {
   Upbeat: "🔥",
 };
 
-function normalizeTags(tags: Song["tags"]): string[] {
-  if (Array.isArray(tags)) return tags;
-  try {
-    return JSON.parse((tags as any) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
 function capoLabel(capo?: string): string {
   if (!capo || capo === "No capo") return "No Capo";
   const fret = capo.match(/\d+/)?.[0];
@@ -42,7 +34,10 @@ function capoLabel(capo?: string): string {
 }
 
 export function SongCard({ song, onClick, compact = false, onAddToSetlist }: SongCardProps) {
-  const tags = normalizeTags(song.tags);
+  const tags = normalizeSongTags(song.tags);
+  const readiness = readinessLabel(song);
+  const issues = getSongReadinessIssues(song);
+  const needsReview = songNeedsReview(song);
   const diffClass = DIFFICULTY_COLOR[song.difficulty as keyof typeof DIFFICULTY_COLOR] ?? DIFFICULTY_COLOR.Intermediate;
   const tempoIcon = TEMPO_ICON[song.tempoFeel as keyof typeof TEMPO_ICON] ?? "🎵";
   const hasCapo = song.capo && song.capo !== "No capo";
@@ -63,6 +58,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
               <div className="flex items-center gap-1.5 shrink-0">
                 {song.pdfUrl && <FileText className="w-3.5 h-3.5 text-primary" />}
                 {song.userAdded && <UserPlus className="w-3.5 h-3.5 text-muted-foreground" />}
+                {needsReview && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
                 <span className="text-base leading-none">{tempoIcon}</span>
               </div>
             </div>
@@ -71,6 +67,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
               <span className={`rounded-md px-1.5 py-0.5 ${hasCapo ? "bg-primary/10 text-primary" : "bg-muted"}`}>{capoLabel(song.capo)}</span>
               {song.duration && <span className="rounded-md bg-muted px-1.5 py-0.5">{formatDuration(song.duration)}</span>}
               {song.genre && <span className="rounded-md bg-muted px-1.5 py-0.5 truncate max-w-[110px]">{song.genre}</span>}
+              {issues.some((issue) => issue.severity === "warning") && <span className="rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-1.5 py-0.5">Review</span>}
             </div>
           </button>
           {onAddToSetlist && (
@@ -101,11 +98,20 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
               {song.userAdded && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/30 text-primary shrink-0">Custom</Badge>
               )}
+              {needsReview && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300/60 text-amber-700 dark:text-amber-300 shrink-0 gap-1">
+                  <AlertTriangle className="w-2.5 h-2.5" /> Review
+                </Badge>
+              )}
             </div>
             <div className="text-sm text-muted-foreground truncate">{song.artist} · {song.year}</div>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${diffClass}`}>{song.difficulty}</span>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${readiness === "Ready" ? "border-emerald-300/60 text-emerald-700 dark:text-emerald-300" : readiness === "Review" ? "border-amber-300/60 text-amber-700 dark:text-amber-300" : "border-border text-muted-foreground"}`}>
+              {readiness === "Ready" && <CheckCircle2 className="inline w-3 h-3 mr-1" />}
+              {readiness}
+            </span>
             <span className={hasCapo ? "capo-badge" : "capo-badge no-capo"}>{capoLabel(song.capo)}</span>
           </div>
         </div>
@@ -138,6 +144,16 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
         {song.strumming && (
           <div className="mb-3 rounded-lg bg-muted/40 px-2 py-1.5">
             <StrumPattern pattern={song.strumming} />
+          </div>
+        )}
+
+        {issues.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {issues.slice(0, 4).map((issue) => (
+              <Badge key={issue.key} variant="outline" className={`text-[10px] px-1.5 py-0 ${issue.severity === "warning" ? "border-amber-300/60 text-amber-700 dark:text-amber-300" : "text-muted-foreground border-border"}`}>
+                {issue.label}
+              </Badge>
+            ))}
           </div>
         )}
 

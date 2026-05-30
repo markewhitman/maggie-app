@@ -216,3 +216,9 @@ No Supabase SQL migration is required for Phase 5.10.
 Phase 5.11 improves the Add Song workflow. When a performer attaches a PDF, the app reads the filename and selectable PDF text to suggest song-card fields such as title, artist, key, capo, chords, strumming, tempo, duration, source URL, tags, and stage notes. Blank fields are filled automatically when possible, and the Smart PDF Import review panel allows Fill blanks or Apply all before saving.
 
 No Supabase SQL migration is required for Phase 5.11. Scanned/image-only PDFs still require manual entry unless OCR is added later.
+
+## Phase 5.12 notes — Smart Import + Song Card Intelligence
+
+Phase 5.12 refines Smart PDF Import with import-confidence scoring, detected-chord preview chips, better key/capo/duration parsing, review reasons, and a missing-essentials checklist. Song cards and the Song Library now show readiness/review indicators and a Needs Review quick filter.
+
+No Supabase SQL migration is required for Phase 5.12. Review state is stored with normal song tags such as `needs-review` and `imported-from-pdf`.

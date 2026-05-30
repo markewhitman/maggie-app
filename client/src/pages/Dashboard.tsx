@@ -4,12 +4,13 @@ import { sbSetlists, sbSongs, type SbSetlist } from "@/lib/supabase";
 import { SongCard } from "@/components/SongCard";
 import { SongDetailModal } from "@/components/SongDetailModal";
 import { AddSongModal } from "@/components/AddSongModal";
+import { getSongReadinessIssues, songNeedsReview } from "@/lib/songReadiness";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock, UserPlus } from "lucide-react";
+import { Search, LayoutGrid, List, SlidersHorizontal, X, Plus, ListMusic, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock, UserPlus, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 
@@ -119,7 +120,7 @@ export default function Dashboard() {
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortMode, setSortMode] = useState<"library" | "title" | "artist" | "year" | "duration">("library");
-  const [quickFilters, setQuickFilters] = useState({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false });
+  const [quickFilters, setQuickFilters] = useState({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false, needsReview: false });
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
   const [showFilters, setShowFilters] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -185,7 +186,9 @@ export default function Dashboard() {
     const withPdf = songs.filter((song) => !!song.pdfUrl).length;
     const custom = songs.filter((song) => !!song.userAdded).length;
     const missingDuration = songs.filter((song) => !song.duration).length;
-    return { withPdf, custom, missingDuration };
+    const needsReview = songs.filter((song) => songNeedsReview(song)).length;
+    const missingEssentials = songs.filter((song) => getSongReadinessIssues(song).some((issue) => issue.severity === "warning")).length;
+    return { withPdf, custom, missingDuration, needsReview, missingEssentials };
   }, [songs]);
 
   const filtered = useMemo(() => {
@@ -226,7 +229,8 @@ export default function Dashboard() {
         (!quickFilters.pdfOnly || !!s.pdfUrl) &&
         (!quickFilters.needsPdf || !s.pdfUrl) &&
         (!quickFilters.customOnly || !!s.userAdded) &&
-        (!quickFilters.missingDuration || !s.duration);
+        (!quickFilters.missingDuration || !s.duration) &&
+        (!quickFilters.needsReview || songNeedsReview(s));
 
       return matchSearch && matchGenre && matchMood && matchDecade && matchEnergy &&
              matchVocal && matchDiff && matchGuitar && matchCapo && matchQuick;
@@ -254,7 +258,7 @@ export default function Dashboard() {
 
   const clearFilters = () => {
     setActiveFilters({});
-    setQuickFilters({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false });
+    setQuickFilters({ pdfOnly: false, needsPdf: false, customOnly: false, missingDuration: false, needsReview: false });
     setSearch("");
   };
 
@@ -288,7 +292,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
         <button type="button" onClick={() => toggleQuickFilter("pdfOnly")} className={`rounded-xl border px-3 py-2 text-left transition-colors ${quickFilters.pdfOnly ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><FileText className="w-3.5 h-3.5" /> PDFs</div>
           <div className="font-semibold text-sm">{stats.withPdf}</div>
@@ -301,6 +305,10 @@ export default function Dashboard() {
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Needs time</div>
           <div className="font-semibold text-sm">{stats.missingDuration}</div>
         </button>
+        <button type="button" onClick={() => toggleQuickFilter("needsReview")} className={`rounded-xl border px-3 py-2 text-left transition-colors ${quickFilters.needsReview ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"}`}>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs review</div>
+          <div className="font-semibold text-sm">{stats.needsReview}</div>
+        </button>
       </div>
 
       {/* Search + filter bar */}
@@ -308,7 +316,7 @@ export default function Dashboard() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search songs, artists, mood, tags…"
+            placeholder="Search songs, artists, key, chords, tags…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -367,6 +375,7 @@ export default function Dashboard() {
           {quickFilters.needsPdf && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("needsPdf")}>Needs PDF<X className="w-3 h-3" /></Badge>}
           {quickFilters.customOnly && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("customOnly")}>Custom songs<X className="w-3 h-3" /></Badge>}
           {quickFilters.missingDuration && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("missingDuration")}>Missing duration<X className="w-3 h-3" /></Badge>}
+          {quickFilters.needsReview && <Badge className="bg-primary/20 text-primary border-primary/30 gap-1 cursor-pointer hover:bg-primary/30 transition-colors" onClick={() => toggleQuickFilter("needsReview")}>Needs review<X className="w-3 h-3" /></Badge>}
           {activeChips.map(([key, val]) => {
             const group = FILTER_GROUPS.find((g) => g.key === key);
             const label = group?.displayLabel(val) ?? val;
@@ -396,6 +405,7 @@ export default function Dashboard() {
             <Badge variant={quickFilters.needsPdf ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("needsPdf")}>Needs PDF</Badge>
             <Badge variant={quickFilters.customOnly ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("customOnly")}>Custom</Badge>
             <Badge variant={quickFilters.missingDuration ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("missingDuration")}>Missing duration</Badge>
+            <Badge variant={quickFilters.needsReview ? "default" : "outline"} className="cursor-pointer text-xs" onClick={() => toggleQuickFilter("needsReview")}>Needs review</Badge>
           </div>
           {FILTER_GROUPS.map((group) => {
             const isExpanded = expandedGroups[group.key] ?? true;

@@ -82,12 +82,26 @@ function suggestionTone(confidence: SmartImportSuggestion["confidence"]): string
   return "border-border bg-muted/50 text-muted-foreground";
 }
 
+function qualityTone(confidence: SmartImportSuggestion["confidence"]): string {
+  if (confidence === "high") return "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-100";
+  if (confidence === "medium") return "border-amber-300/50 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100";
+  return "border-red-300/50 bg-red-50 text-red-900 dark:bg-red-900/20 dark:text-red-100";
+}
+
+function mergeTagList(...groups: string[]): string {
+  const tags = new Set<string>();
+  for (const group of groups) {
+    group.split(",").map((tag) => tag.trim()).filter(Boolean).forEach((tag) => tags.add(tag));
+  }
+  return Array.from(tags).join(", ");
+}
+
 function SuggestionRow({ label, suggestion }: { label: string; suggestion?: SmartImportSuggestion }) {
   if (!suggestion) return null;
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 rounded-lg border border-border/70 bg-background/70 px-2.5 py-2 text-xs">
       <div className="sm:w-28 font-semibold text-muted-foreground">{label}</div>
-      <div className="flex-1 min-w-0 font-medium truncate">{suggestion.value}</div>
+      <div className="flex-1 min-w-0 font-medium break-words">{suggestion.value}</div>
       <Badge variant="outline" className={`w-fit text-[10px] ${suggestionTone(suggestion.confidence)}`}>
         {confidenceLabel(suggestion.confidence)} · {suggestion.source}
       </Badge>
@@ -168,9 +182,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
         if (overwrite || !next.tags.trim()) {
           next.tags = s.tags.value;
         } else {
-          const current = new Set(next.tags.split(",").map((tag) => tag.trim()).filter(Boolean));
-          s.tags.value.split(",").map((tag) => tag.trim()).filter(Boolean).forEach((tag) => current.add(tag));
-          next.tags = Array.from(current).join(", ");
+          next.tags = mergeTagList(next.tags, s.tags.value);
         }
       }
 
@@ -199,6 +211,18 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
     const completed = fields.filter((field) => String(field).trim()).length;
     return Math.round((completed / fields.length) * 100);
   }, [form]);
+
+  const importChecklist = useMemo(() => [
+    { label: "Title", done: !!form.title.trim() },
+    { label: "Artist", done: !!form.artist.trim() },
+    { label: "Key", done: !!form.key.trim() && form.key.trim().toLowerCase() !== "unknown" },
+    { label: "Capo", done: !!form.capo.trim() },
+    { label: "Chords", done: !!form.chords.trim() },
+    { label: "Duration", done: !!durationInput.trim() },
+    { label: "PDF", done: !!pdfFile },
+  ], [durationInput, form.artist, form.capo, form.chords, form.key, form.title, pdfFile]);
+
+  const missingEssentials = importChecklist.filter((item) => !item.done);
 
   const handlePdfSelection = async (file: File | undefined) => {
     if (!file) {
@@ -287,6 +311,12 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
         pdfFilename = pdfFile.name;
       }
 
+      const tags = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+      if (pdfFile) {
+        if (!tags.includes("imported-from-pdf")) tags.push("imported-from-pdf");
+        if (smartImport && !tags.includes("needs-review")) tags.push("needs-review");
+      }
+
       const song: Song = {
         id: songId,
         title: form.title.trim(),
@@ -305,7 +335,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
         energy: form.energy,
         vocalStyle: form.vocalStyle,
         difficulty: form.difficulty,
-        tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        tags,
         performanceNote: form.performanceNote.trim(),
         ultimateGuitarUrl: form.ultimateGuitarUrl.trim(),
         setPosition: 99,
@@ -398,7 +428,48 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
               </div>
 
               {smartImport && (
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                    <div className={`rounded-xl border px-3 py-2 ${qualityTone(smartImport.importQuality)}`}>
+                      <div className="text-[10px] uppercase tracking-wide font-semibold opacity-75">Import confidence</div>
+                      <div className="font-semibold text-sm">{confidenceLabel(smartImport.importQuality)}</div>
+                      <div className="text-[11px] mt-0.5 opacity-85">{smartImport.readableTextFound ? "Readable PDF text found" : "Filename-only import"}</div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-background/70 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">Missing essentials</div>
+                      <div className="font-semibold text-sm">{missingEssentials.length === 0 ? "Ready to save" : `${missingEssentials.length} to review`}</div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {importChecklist.map((item) => (
+                          <Badge key={item.label} variant="outline" className={`text-[10px] ${item.done ? "border-emerald-300/50 text-emerald-700 dark:text-emerald-300" : "border-amber-300/50 text-amber-700 dark:text-amber-300"}`}>
+                            {item.done ? "✓" : "•"} {item.label}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-background/70 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">Review notes</div>
+                      <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                        {(smartImport.reviewReasons.length ? smartImport.reviewReasons.slice(0, 3) : ["Suggestions look complete. Still confirm before saving."]).map((reason) => (
+                          <div key={reason}>• {reason}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {smartImport.detectedChords.length > 0 && (
+                    <div className="rounded-xl border border-border bg-background/70 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="text-xs font-semibold text-muted-foreground">Detected chord preview</div>
+                        <Badge variant="outline" className="text-[10px]">{smartImport.detectedChords.length} found</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {smartImport.detectedChords.slice(0, 18).map((chord) => (
+                          <Badge key={chord} variant="secondary" className="font-mono text-xs">{chord}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <SuggestionRow label="Title" suggestion={smartImport.suggestions.title} />
                     <SuggestionRow label="Artist" suggestion={smartImport.suggestions.artist} />
