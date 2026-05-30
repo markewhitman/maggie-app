@@ -319,6 +319,16 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
     setPageNumber((page) => clampPage(page + 1, numPages));
   }, [numPages]);
 
+  const scrollByKeyboard = useCallback((direction: "up" | "down", distance: "line" | "page" = "line") => {
+    const container = containerRef.current;
+    if (!container) return;
+    const base = distance === "page" ? Math.max(container.clientHeight * 0.82, 240) : 120;
+    container.scrollBy({
+      top: direction === "down" ? base : -base,
+      behavior: "smooth",
+    });
+  }, []);
+
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -459,8 +469,10 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
       const shortcutsEnabled = performanceControlsStore.isEnabled();
       const key = event.key;
       const lowerKey = key.toLowerCase();
-      const isNextKey = key === "ArrowRight" || key === "PageDown" || key === " " || (viewMode === "page" && key === "ArrowDown");
-      const isPrevKey = key === "ArrowLeft" || key === "PageUp" || (viewMode === "page" && key === "ArrowUp");
+      const isPageNextKey = key === "ArrowRight" || key === "PageDown" || key === " " || key === "ArrowDown";
+      const isPagePrevKey = key === "ArrowLeft" || key === "PageUp" || key === "ArrowUp";
+      const isScrollDownKey = key === "ArrowDown" || key === "PageDown" || key === " ";
+      const isScrollUpKey = key === "ArrowUp" || key === "PageUp";
 
       if (key === "Escape") {
         event.preventDefault();
@@ -502,17 +514,28 @@ export function FullscreenPdfViewer({ pdfUrl, songTitle, onClose, initialPage = 
 
       if (annotationMode) return;
 
-      if (isNextKey) {
+      if (viewMode === "scroll") {
+        if (isScrollDownKey) {
+          event.preventDefault();
+          scrollByKeyboard("down", key === "ArrowDown" ? "line" : "page");
+        } else if (isScrollUpKey) {
+          event.preventDefault();
+          scrollByKeyboard("up", key === "ArrowUp" ? "line" : "page");
+        }
+        return;
+      }
+
+      if (isPageNextKey) {
         event.preventDefault();
         goNext();
-      } else if (isPrevKey) {
+      } else if (isPagePrevKey) {
         event.preventDefault();
         goPrev();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [annotationMode, goNext, goPrev, onClose, undoLastStroke, viewMode]);
+  }, [annotationMode, goNext, goPrev, onClose, scrollByKeyboard, undoLastStroke, viewMode]);
 
 
   const handleScroll = useCallback(() => {

@@ -265,6 +265,13 @@ npx supabase functions deploy analyze-song-pdf --project-ref bephofcynjspsulmuik
 
 No database migration is required for this phase.
 
+
+## Phase 5.14.1 — Keyboard / Pedal Control Fixes
+
+Phase 5.14.1 fixes the `U` shortcut so it undoes the most recently completed/skipped song, and adds explicit vertical keyboard scrolling in PDF Scroll mode for ArrowUp/ArrowDown/PageUp/PageDown/Space.
+
+No Supabase SQL migration or Edge Function redeploy is required for Phase 5.14.1.
+
 ## Phase 5.14 — Pedal / Keyboard Performance Controls
 
 Phase 5.14 adds keyboard and Bluetooth page-turner support for Stage, Performance Mode, and the fullscreen PDF viewer. Settings now includes a Performance Controls toggle and shortcut reference. Stage and PDF viewer surfaces also include on-screen shortcut help.

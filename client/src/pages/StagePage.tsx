@@ -898,6 +898,7 @@ function PerformanceModeView({
   onMarkPlayed,
   onMarkSkipped,
   onUndo,
+  onUndoLast,
   onOpenRequests,
 }: {
   currentSong: Song | null;
@@ -917,6 +918,7 @@ function PerformanceModeView({
   onMarkPlayed: () => void;
   onMarkSkipped: () => void;
   onUndo: (songId: string) => void;
+  onUndoLast: () => void;
   onOpenRequests: () => void;
 }) {
   const [showFullSet, setShowFullSet] = useState(false);
@@ -968,7 +970,7 @@ function PerformanceModeView({
         if (currentStatus === "pending") onMarkSkipped();
       } else if (lowerKey === "u") {
         event.preventDefault();
-        onUndo(currentSong.id);
+        onUndoLast();
       } else if (lowerKey === "m") {
         event.preventDefault();
         if (hasPdf) onOpenSheet();
@@ -988,7 +990,7 @@ function PerformanceModeView({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenSheet, onUndo, showShortcutHelp]);
+  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
 
   return (
     <div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden">
@@ -1685,6 +1687,18 @@ export default function StagePage() {
     return "pending";
   };
 
+  const lastProgressedSongId = [...orderedIds]
+    .reverse()
+    .find((id) => playedIds.includes(id) || skippedIds.includes(id)) ?? null;
+
+  const undoLastProgress = () => {
+    if (!lastProgressedSongId) {
+      toast({ title: "Nothing to undo", description: "No songs have been marked done or skipped yet." });
+      return;
+    }
+    undo(lastProgressedSongId);
+  };
+
   const markPlayed = (id: string) =>
     updateSession({
       playedIds: [...playedIds, id],
@@ -1824,7 +1838,7 @@ export default function StagePage() {
         markSkipped(nextSong.id);
       } else if (lowerKey === "u") {
         event.preventDefault();
-        undo(nextSong.id);
+        undoLastProgress();
       } else if (lowerKey === "m") {
         event.preventDefault();
         if (nextSongHasPdf) setFullscreenPdfSong(nextSong);
@@ -1843,7 +1857,7 @@ export default function StagePage() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cardSong, fullscreenPdfSong, nextSong, nextSongHasPdf, noteModalSong, performanceMode, session, sheetSong, showAudienceShare, showEditSetlist, showRequests, showShortcutHelp]);
+  }, [cardSong, fullscreenPdfSong, nextSong, nextSongHasPdf, noteModalSong, performanceMode, session, sheetSong, showAudienceShare, showEditSetlist, showRequests, showShortcutHelp, undoLastProgress]);
 
   if (sessionLoading) {
     return (
@@ -2316,6 +2330,7 @@ export default function StagePage() {
             if (nextSong) markSkipped(nextSong.id);
           }}
           onUndo={undo}
+          onUndoLast={undoLastProgress}
           onOpenRequests={() => {
             setPerformanceMode(false);
             setShowRequests(true);
