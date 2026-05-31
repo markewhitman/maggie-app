@@ -71,6 +71,39 @@ export interface PerformanceNote {
   createdAt: string;
 }
 
+export interface ShowRecapSongNote {
+  songId: string;
+  songTitle: string;
+  status: "played" | "skipped" | "pending";
+  note: string;
+}
+
+export interface ShowRecap {
+  id: string;
+  setlistId: string;
+  setlistName: string;
+  gigDate?: string;
+  startedAt?: string;
+  endedAt: string;
+  songIds: string[];
+  playedIds: string[];
+  skippedIds: string[];
+  pendingIds: string[];
+  totalSongs: number;
+  playedCount: number;
+  skippedCount: number;
+  pendingCount: number;
+  timePlayedSeconds: number;
+  timeRemainingSeconds: number;
+  projectedSetSeconds: number;
+  requestsPendingCount: number;
+  whatWorked?: string;
+  changeNextTime?: string;
+  crowdFavorites?: string;
+  songNotes: ShowRecapSongNote[];
+  createdAt: string;
+}
+
 // ─── Duration Helpers ────────────────────────────────────
 
 /** Format seconds as "m:ss" (e.g. 222 → "3:42") */
@@ -129,6 +162,7 @@ const KEYS = {
   setlists: "maggie_setlists_v2",
   venues: "maggie_venues_v2",
   perfNotes: "maggie_perf_notes_v2",
+  showRecaps: "maggie_show_recaps_v1",
 } as const;
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -351,5 +385,38 @@ export const perfNotesStore = {
 
   delete(id: string): void {
     save(KEYS.perfNotes, this.getAll().filter((n) => n.id !== id));
+  },
+};
+
+
+// ─── Show Recap Store ─────────────────────────────────────
+
+export const showRecapsStore = {
+  getAll(): ShowRecap[] {
+    return load<ShowRecap[]>(KEYS.showRecaps, []);
+  },
+
+  getForSetlist(setlistId: string): ShowRecap[] {
+    return this.getAll().filter((recap) => recap.setlistId === setlistId);
+  },
+
+  save(recap: ShowRecap): void {
+    const recaps = this.getAll();
+    const idx = recaps.findIndex((r) => r.id === recap.id);
+    if (idx >= 0) recaps[idx] = recap;
+    else recaps.unshift(recap);
+    save(KEYS.showRecaps, recaps);
+  },
+
+  create(data: Omit<ShowRecap, "id" | "createdAt">): ShowRecap {
+    const recap: ShowRecap = { ...data, id: uid(), createdAt: new Date().toISOString() };
+    const recaps = this.getAll();
+    recaps.unshift(recap);
+    save(KEYS.showRecaps, recaps);
+    return recap;
+  },
+
+  delete(id: string): void {
+    save(KEYS.showRecaps, this.getAll().filter((recap) => recap.id !== id));
   },
 };

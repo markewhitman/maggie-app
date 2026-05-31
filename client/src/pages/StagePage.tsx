@@ -21,10 +21,12 @@ import {
   formatDuration,
   formatDurationLong,
   stageTimingStore,
+  showRecapsStore,
   type Song,
   type PerformanceNote,
   type StageTimingPrefs,
   type Setlist,
+  type ShowRecap,
 } from "@/lib/data";
 import {
   sbSession,
@@ -917,6 +919,7 @@ function PerformanceModeView({
   onUndo,
   onUndoLast,
   onOpenRequests,
+  onOpenRecap,
 }: {
   currentSong: Song | null;
   upcoming: Song[];
@@ -937,6 +940,7 @@ function PerformanceModeView({
   onUndo: (songId: string) => void;
   onUndoLast: () => void;
   onOpenRequests: () => void;
+  onOpenRecap: () => void;
 }) {
   const [showFullSet, setShowFullSet] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
@@ -997,6 +1001,9 @@ function PerformanceModeView({
       } else if (lowerKey === "r") {
         event.preventDefault();
         onOpenRequests();
+      } else if (lowerKey === "w") {
+        event.preventDefault();
+        onOpenRecap();
       } else if (lowerKey === "l") {
         event.preventDefault();
         setShowFullSet((value) => !value);
@@ -1007,7 +1014,7 @@ function PerformanceModeView({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
+  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
 
   return (
     <div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden">
@@ -1028,6 +1035,9 @@ function PerformanceModeView({
                 {requestsCount}
               </span>
             )}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onOpenRecap} className="gap-1.5 h-10">
+            <ClipboardList className="w-4 h-4" /> Recap
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowFullSet((p) => !p)} className="gap-1.5 h-10">
             <ListMusic className="w-4 h-4" /> Set
@@ -1194,10 +1204,268 @@ function PerformanceModeView({
             <div className="text-5xl mb-4">🎉</div>
             <div className="font-display font-bold text-3xl italic">All done!</div>
             <div className="text-sm mt-2">Great show.</div>
+            <Button className="mt-5 gap-2" onClick={onOpenRecap}>
+              <ClipboardList className="w-4 h-4" /> Finish / Recap
+            </Button>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+
+// ─── Performance Recap / Show Wrap-Up ────────────────────
+
+type RecapSongNoteDraft = {
+  songId: string;
+  songTitle: string;
+  status: "played" | "skipped" | "pending";
+  note: string;
+};
+
+function PerformanceRecapDialog({
+  open,
+  onClose,
+  setlistName,
+  gigDate,
+  orderedSongs,
+  playedIds,
+  skippedIds,
+  pendingSongs,
+  timePlayed,
+  timeRemaining,
+  projectedSetSeconds,
+  requestsCount,
+  perfNotes,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  setlistName: string;
+  gigDate?: string | null;
+  orderedSongs: Song[];
+  playedIds: string[];
+  skippedIds: string[];
+  pendingSongs: Song[];
+  timePlayed: number;
+  timeRemaining: number;
+  projectedSetSeconds: number;
+  requestsCount: number;
+  perfNotes: PerformanceNote[];
+  onSave: (
+    draft: {
+      whatWorked: string;
+      changeNextTime: string;
+      crowdFavorites: string;
+      songNotes: RecapSongNoteDraft[];
+    },
+    finishSet: boolean,
+  ) => Promise<void>;
+}) {
+  const [whatWorked, setWhatWorked] = useState("");
+  const [changeNextTime, setChangeNextTime] = useState("");
+  const [crowdFavorites, setCrowdFavorites] = useState("");
+  const [songNoteDrafts, setSongNoteDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<"save" | "finish" | null>(null);
+
+  const playedSongs = orderedSongs.filter((song) => playedIds.includes(song.id));
+  const skippedSongs = orderedSongs.filter((song) => skippedIds.includes(song.id));
+  const completedCount = playedIds.length + skippedIds.length;
+  const progressPct = orderedSongs.length
+    ? Math.round((completedCount / orderedSongs.length) * 100)
+    : 0;
+  const songsWithoutNotes = orderedSongs.filter(
+    (song) => !perfNotes.some((note) => note.songId === song.id),
+  );
+
+  const candidateMap = new Map<string, Song>();
+  [...skippedSongs, ...pendingSongs, ...songsWithoutNotes.slice(0, 8)].forEach((song) => {
+    candidateMap.set(song.id, song);
+  });
+  const noteCandidates = Array.from(candidateMap.values()).slice(0, 10);
+
+  const statusFor = (song: Song): "played" | "skipped" | "pending" => {
+    if (playedIds.includes(song.id)) return "played";
+    if (skippedIds.includes(song.id)) return "skipped";
+    return "pending";
+  };
+
+  const save = async (finishSet: boolean) => {
+    setSaving(finishSet ? "finish" : "save");
+    try {
+      const songNotes: RecapSongNoteDraft[] = noteCandidates
+        .map((song) => ({
+          songId: song.id,
+          songTitle: song.title,
+          status: statusFor(song),
+          note: (songNoteDrafts[song.id] ?? "").trim(),
+        }))
+        .filter((item) => item.note.length > 0);
+
+      await onSave(
+        {
+          whatWorked: whatWorked.trim(),
+          changeNextTime: changeNextTime.trim(),
+          crowdFavorites: crowdFavorites.trim(),
+          songNotes,
+        },
+        finishSet,
+      );
+      onClose();
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display italic flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-primary" /> Show recap
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+                  {gigDate ? new Date(gigDate).toLocaleDateString() : "Tonight's set"}
+                </div>
+                <div className="font-display text-xl font-bold italic">{setlistName}</div>
+              </div>
+              <Badge className={progressPct >= 100 ? "bg-green-600 text-white" : "bg-primary text-primary-foreground"}>
+                {progressPct}% complete
+              </Badge>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+              <div className="stage-timing-tile">
+                <span className="stage-timing-label">Played</span>
+                <span className="stage-timing-value text-lg">{playedSongs.length}</span>
+              </div>
+              <div className="stage-timing-tile">
+                <span className="stage-timing-label">Skipped</span>
+                <span className="stage-timing-value text-lg">{skippedSongs.length}</span>
+              </div>
+              <div className="stage-timing-tile">
+                <span className="stage-timing-label">Pending</span>
+                <span className="stage-timing-value text-lg">{pendingSongs.length}</span>
+              </div>
+              <div className="stage-timing-tile">
+                <span className="stage-timing-label">Music time</span>
+                <span className="stage-timing-value text-lg">{formatDurationLong(timePlayed)}</span>
+              </div>
+              <div className="stage-timing-tile border-primary/35 bg-primary/10">
+                <span className="stage-timing-label">Requests queued</span>
+                <span className="stage-timing-value text-lg">{requestsCount}</span>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Projected set length was about {formatDurationLong(projectedSetSeconds)}. Remaining planned music is {formatDurationLong(timeRemaining)}.
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div>
+              <Label className="text-xs mb-1.5 block">What worked?</Label>
+              <Textarea
+                value={whatWorked}
+                onChange={(e) => setWhatWorked(e.target.value)}
+                placeholder="Songs, flow, crowd moments, pacing…"
+                rows={4}
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Change next time</Label>
+              <Textarea
+                value={changeNextTime}
+                onChange={(e) => setChangeNextTime(e.target.value)}
+                placeholder="Move a song, change key, shorten intro…"
+                rows={4}
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Crowd favorites</Label>
+              <Textarea
+                value={crowdFavorites}
+                onChange={(e) => setCrowdFavorites(e.target.value)}
+                placeholder="Requests, singalongs, surprise wins…"
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-muted/25 p-3">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <div className="font-semibold text-sm">Quick per-song notes</div>
+                <p className="text-xs text-muted-foreground">
+                  Optional. These save into song performance history as separate post-show notes.
+                </p>
+              </div>
+              <Badge variant="outline" className="text-[10px] shrink-0">
+                {noteCandidates.length} prompts
+              </Badge>
+            </div>
+
+            {noteCandidates.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-4 text-center">
+                Every song already has a note in this set. Add overall notes above if needed.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {noteCandidates.map((song) => {
+                  const status = statusFor(song);
+                  return (
+                    <div key={song.id} className="rounded-xl border border-border bg-card px-3 py-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{song.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
+                        </div>
+                        <Badge variant={status === "played" ? "default" : "outline"} className="text-[10px] capitalize">
+                          {status}
+                        </Badge>
+                      </div>
+                      <Textarea
+                        value={songNoteDrafts[song.id] ?? ""}
+                        onChange={(e) =>
+                          setSongNoteDrafts((prev) => ({ ...prev, [song.id]: e.target.value }))
+                        }
+                        placeholder={
+                          status === "skipped"
+                            ? "Why skip it? Keep, move, or remove?"
+                            : status === "pending"
+                              ? "Did not get to this one — keep for next time?"
+                              : "Any adjustment for next performance?"
+                        }
+                        rows={2}
+                        className="text-sm"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+            <Button variant="outline" onClick={onClose} disabled={!!saving}>
+              Cancel
+            </Button>
+            <Button variant="outline" onClick={() => save(false)} disabled={!!saving} className="gap-1.5">
+              {saving === "save" ? "Saving…" : "Save recap"}
+            </Button>
+            <Button onClick={() => save(true)} disabled={!!saving} className="gap-1.5 font-semibold">
+              {saving === "finish" ? "Finishing…" : "Save recap & finish set"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1484,6 +1752,7 @@ export default function StagePage() {
   const [showEditSetlist, setShowEditSetlist] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
   const [requests, setRequests] = useState<SbRequest[]>([]);
   const [perfNotes, setPerfNotes] = useState<PerformanceNote[]>([]);
   const [pdfMap, setPdfMap] = useState<
@@ -1788,6 +2057,83 @@ export default function StagePage() {
     }
   };
 
+
+  const saveShowRecap = async (
+    draft: {
+      whatWorked: string;
+      changeNextTime: string;
+      crowdFavorites: string;
+      songNotes: Array<{
+        songId: string;
+        songTitle: string;
+        status: "played" | "skipped" | "pending";
+        note: string;
+      }>;
+    },
+    finishSet: boolean,
+  ) => {
+    if (!session) return;
+
+    const pendingIds = pendingSongs.map((song) => song.id);
+    const nowIso = new Date().toISOString();
+    const recap: Omit<ShowRecap, "id" | "createdAt"> = {
+      setlistId: session.setlistId,
+      setlistName: currentSetlist?.name ?? "Active Stage set",
+      gigDate: currentSetlist?.gig_date ?? undefined,
+      startedAt: stageStartTime || undefined,
+      endedAt: nowIso,
+      songIds: orderedIds,
+      playedIds,
+      skippedIds,
+      pendingIds,
+      totalSongs: orderedIds.length,
+      playedCount: playedIds.length,
+      skippedCount: skippedIds.length,
+      pendingCount: pendingIds.length,
+      timePlayedSeconds: timePlayed,
+      timeRemainingSeconds: timeRemaining,
+      projectedSetSeconds: projectedMusicTime,
+      requestsPendingCount: requests.length,
+      whatWorked: draft.whatWorked || undefined,
+      changeNextTime: draft.changeNextTime || undefined,
+      crowdFavorites: draft.crowdFavorites || undefined,
+      songNotes: draft.songNotes,
+    };
+
+    showRecapsStore.create(recap);
+
+    const createdNotes: PerformanceNote[] = draft.songNotes.map((item) => ({
+      id: uid(),
+      setlistId: session.setlistId,
+      songId: item.songId,
+      gigDate: currentSetlist?.gig_date ?? undefined,
+      crowdReaction: item.status === "played" ? 4 : 3,
+      tempoFeel: "",
+      lyricsConfidence: "",
+      notes: `[Post-show recap] ${item.note}`,
+      createdAt: new Date().toISOString(),
+    }));
+
+    if (createdNotes.length > 0) {
+      await Promise.all(createdNotes.map((note) => sbPerfNotes.upsert(perfNoteToSb(note))));
+      setPerfNotes((prev) => [...createdNotes, ...prev]);
+    }
+
+    if (finishSet) {
+      await sbSession.clear();
+      setSessionState(null);
+      toast({
+        title: "Show recap saved",
+        description: "The active set has been finished and cleared from Stage.",
+      });
+    } else {
+      toast({
+        title: "Show recap saved",
+        description: "Post-show notes were saved on this device and included in future backups.",
+      });
+    }
+  };
+
   const handleEditSave = async (newIds: string[]) => {
     updateSession({ orderedSongIds: newIds });
     if (session) {
@@ -1818,7 +2164,8 @@ export default function StagePage() {
           cardSong ||
           sheetSong ||
           showEditSetlist ||
-          showAudienceShare,
+          showAudienceShare ||
+          showRecap,
       );
       if (modalOpen) return;
 
@@ -1870,12 +2217,15 @@ export default function StagePage() {
       } else if (lowerKey === "r") {
         event.preventDefault();
         setShowRequests(true);
+      } else if (lowerKey === "w") {
+        event.preventDefault();
+        setShowRecap(true);
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cardSong, fullscreenPdfSong, nextSong, nextSongHasPdf, noteModalSong, performanceMode, session, sheetSong, showAudienceShare, showEditSetlist, showRequests, showShortcutHelp, undoLastProgress]);
+  }, [cardSong, fullscreenPdfSong, nextSong, nextSongHasPdf, noteModalSong, performanceMode, session, sheetSong, showAudienceShare, showEditSetlist, showRecap, showRequests, showShortcutHelp, undoLastProgress]);
 
   if (sessionLoading) {
     return (
@@ -2065,6 +2415,15 @@ export default function StagePage() {
             title="Check missing PDFs, durations, review flags, QR readiness, and backup status"
           >
             <ShieldCheck className="w-3.5 h-3.5" /> Ready
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowRecap(true)}
+            className="gap-1.5"
+            title="Review show progress and save post-show notes"
+          >
+            <ClipboardList className="w-3.5 h-3.5" /> Recap
           </Button>
           <Button
             variant="default"
@@ -2363,6 +2722,31 @@ export default function StagePage() {
             setPerformanceMode(false);
             setShowRequests(true);
           }}
+          onOpenRecap={() => {
+            setPerformanceMode(false);
+            setShowRecap(true);
+          }}
+        />
+      )}
+
+
+      {/* Performance recap / finish flow */}
+      {showRecap && (
+        <PerformanceRecapDialog
+          open={showRecap}
+          onClose={() => setShowRecap(false)}
+          setlistName={currentSetlist?.name ?? "Active Stage set"}
+          gigDate={currentSetlist?.gig_date ?? null}
+          orderedSongs={orderedSongs}
+          playedIds={playedIds}
+          skippedIds={skippedIds}
+          pendingSongs={pendingSongs}
+          timePlayed={timePlayed}
+          timeRemaining={timeRemaining}
+          projectedSetSeconds={projectedMusicTime}
+          requestsCount={requests.length}
+          perfNotes={perfNotes}
+          onSave={saveShowRecap}
         />
       )}
 

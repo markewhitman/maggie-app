@@ -283,3 +283,9 @@ No Supabase SQL migration is required for Phase 5.14.
 Phase 5.15 adds a readiness screen before loading a set for performance. The app now checks missing PDFs, missing durations, songs needing review, duplicate songs, missing key/chord cues, audience QR readiness, runtime estimates, and backup freshness.
 
 No Supabase SQL migration or Edge Function redeploy is required for this phase.
+
+## Phase 5.16 — Performance Recap + Show Wrap-Up
+
+Phase 5.16 adds a Stage/Performance Mode recap workflow. Performers can review played/skipped/pending songs, capture post-show notes, save per-song recap notes into performance history, and optionally finish/clear the active set after saving the recap.
+
+Show recaps are stored locally and included in backup exports. No Supabase SQL migration or Edge Function redeploy is required.

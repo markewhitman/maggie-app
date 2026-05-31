@@ -61,6 +61,7 @@ export const STAGE_SHORTCUTS = [
   { keys: "N", action: "Open performance note" },
   { keys: "P", action: "Open Performance Mode" },
   { keys: "R", action: "Open audience requests" },
+  { keys: "W", action: "Open show recap / wrap-up" },
   { keys: "L", action: "Show/hide full set in Performance Mode" },
   { keys: "?", action: "Show shortcuts" },
   { keys: "Esc", action: "Close overlay" },

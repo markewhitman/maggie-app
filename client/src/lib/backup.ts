@@ -1,3 +1,4 @@
+import { showRecapsStore } from "@/lib/data";
 import { markBackupExported } from "@/lib/setlistReadiness";
 import {
   getDeviceId,
@@ -27,6 +28,7 @@ export interface MaggieBackup {
     pdfAnnotations: unknown[];
     pendingRequests: unknown[];
     requestLog: unknown[];
+    showRecaps: unknown[];
   };
   localPreferences: Record<string, unknown>;
   notes: string[];
@@ -92,10 +94,11 @@ export async function createMaggieBackup(): Promise<MaggieBackup> {
       pdfAnnotations,
       pendingRequests,
       requestLog,
+      showRecaps: showRecapsStore.getAll(),
     },
     localPreferences: collectLocalPreferences(),
     notes: [
-      "This backup exports metadata, public PDF URLs, and annotation overlay data, not PDF file binaries.",
+      "This backup exports metadata, public PDF URLs, annotation overlay data, and locally saved show recaps, not PDF file binaries.",
       "Use Supabase Storage as the source of truth for uploaded PDF files.",
     ],
   };
