@@ -1,8 +1,9 @@
 import { Suspense, lazy, useState, useRef, useCallback, useEffect } from "react";
-import type { Song, PerformanceNote } from "@/lib/data";
+import type { Song, PerformanceNote, SongAudioResource } from "@/lib/data";
 import { formatDuration } from "@/lib/data";
 import { analyzeSongPdf, enhanceSongPdfWithAi, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
 import { sbPdfs, sbSongPdfs, sbPerfNotes, sbSongs, type SbPerfNote } from "@/lib/supabase";
+import { AUDIO_RESOURCE_TYPES, audioTypeLabel, audioTypeShortLabel, audioTypeTone, detectAudioProvider, getPrimaryAudioResource, isValidAudioUrl, normalizeAudioResources, openAudioResource } from "@/lib/audioResources";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/hooks/use-confirm";
 import {
   ExternalLink, Upload, Trash2, FileText, ChevronLeft, ChevronRight,
-  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2, UserPlus, Tag, Mic2, Sparkles, Wand2, CheckCircle2, AlertTriangle
+  Music, Guitar, Star, Clock, Loader2, AlertCircle, Info, Pencil, Save, Maximize2, UserPlus, Tag, Mic2, Sparkles, Wand2, CheckCircle2, AlertTriangle, Headphones, PlayCircle, Plus, X, Link2
 } from "lucide-react";
 const FullscreenPdfViewer = lazy(() =>
   import("@/components/FullscreenPdfViewer").then((mod) => ({ default: mod.FullscreenPdfViewer }))
@@ -135,11 +136,57 @@ function StarRating({ value }: { value: number }) {
   );
 }
 
+function AudioResourceCard({ resource }: { resource: SongAudioResource }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/70 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+          <Badge variant="outline" className={`text-[10px] gap-1 ${audioTypeTone(resource.type)}`}>
+            <Headphones className="w-3 h-3" /> {audioTypeShortLabel(resource.type)}
+          </Badge>
+          {resource.provider && <Badge variant="secondary" className="text-[10px]">{resource.provider}</Badge>}
+        </div>
+        <div className="font-semibold text-sm truncate">{resource.label || audioTypeLabel(resource.type)}</div>
+        {resource.notes && <p className="text-xs text-muted-foreground mt-1 leading-snug">{resource.notes}</p>}
+        <div className="text-[11px] text-muted-foreground truncate mt-1">{resource.url}</div>
+      </div>
+      <Button size="sm" className="gap-1.5 shrink-0" onClick={() => openAudioResource(resource)}>
+        <PlayCircle className="w-4 h-4" /> Open
+      </Button>
+    </div>
+  );
+}
+
 // ─── Edit Form ────────────────────────────────────────────
 
 function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) => void | Promise<void>; onCancel: () => void }) {
-  const [form, setForm] = useState<Song>({ ...song });
+  const [form, setForm] = useState<Song>({ ...song, audioResources: normalizeAudioResources(song.audioResources) });
   const set = (field: keyof Song, value: any) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const audioResources = normalizeAudioResources(form.audioResources);
+  const updateAudioResource = (index: number, patch: Partial<SongAudioResource>) => {
+    const next = [...audioResources];
+    const current = next[index];
+    if (!current) return;
+    const patched = { ...current, ...patch };
+    if (patch.url !== undefined) patched.provider = detectAudioProvider(patch.url);
+    next[index] = patched;
+    set("audioResources", next);
+  };
+  const addAudioResource = (type: SongAudioResource["type"] = "original") => {
+    set("audioResources", [
+      ...audioResources,
+      { id: `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, label: audioTypeLabel(type), url: "", provider: "", notes: "" },
+    ]);
+  };
+  const removeAudioResource = (index: number) => {
+    set("audioResources", audioResources.filter((_, i) => i !== index));
+  };
+  const saveEditedSong = () => {
+    const invalid = normalizeAudioResources(form.audioResources).find((resource) => resource.url && !isValidAudioUrl(resource.url));
+    if (invalid) return;
+    onSave({ ...form, audioResources: normalizeAudioResources(form.audioResources) });
+  };
 
   const handleTagsChange = (raw: string) => {
     set("tags", raw.split(",").map((t) => t.trim()).filter(Boolean));
@@ -290,9 +337,58 @@ function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) =>
           <Label className="text-xs">Ultimate Guitar URL</Label>
           <Input value={form.ultimateGuitarUrl} onChange={(e) => set("ultimateGuitarUrl", e.target.value)} placeholder="https://tabs.ultimate-guitar.com/…" />
         </div>
+
+        {/* Audio resources */}
+        <div className="col-span-2 space-y-3 rounded-xl border border-border bg-muted/25 p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <Label className="text-xs flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5" /> Recordings and backing tracks</Label>
+              <p className="text-[11px] text-muted-foreground mt-1">Link the song card to original recordings, practice references, or backing tracks.</p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={() => addAudioResource("original")}>
+                <Plus className="w-3.5 h-3.5" /> Original
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={() => addAudioResource("backing")}>
+                <Plus className="w-3.5 h-3.5" /> Backing
+              </Button>
+            </div>
+          </div>
+
+          {audioResources.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border bg-background/50 p-3 text-xs text-muted-foreground">
+              No audio links yet. Add a reference recording or backing track URL.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {audioResources.map((resource, index) => {
+                const invalidUrl = !!resource.url && !isValidAudioUrl(resource.url);
+                return (
+                  <div key={resource.id} className="rounded-lg border border-border bg-background/70 p-2 space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2">
+                      <Select value={resource.type} onValueChange={(v) => updateAudioResource(index, { type: v as SongAudioResource["type"], label: resource.label || audioTypeLabel(v as SongAudioResource["type"]) })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {AUDIO_RESOURCE_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Input value={resource.label} onChange={(e) => updateAudioResource(index, { label: e.target.value })} placeholder="Label" />
+                      <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAudioResource(index)} title="Remove audio link">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <Input value={resource.url} onChange={(e) => updateAudioResource(index, { url: e.target.value })} placeholder="https://…" inputMode="url" className={invalidUrl ? "border-destructive" : ""} />
+                    {invalidUrl && <div className="text-[11px] text-destructive">Use a full http:// or https:// link.</div>}
+                    <Textarea value={resource.notes ?? ""} onChange={(e) => updateAudioResource(index, { notes: e.target.value })} placeholder="Optional notes, e.g. acoustic reference, capo differs, backing track is in G…" rows={2} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex gap-2 pt-2 border-t border-border">
-        <Button onClick={() => onSave(form)} className="flex-1 gap-1.5">
+        <Button onClick={saveEditedSong} className="flex-1 gap-1.5">
           <Save className="w-4 h-4" /> Save Changes
         </Button>
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
@@ -536,6 +632,9 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
     toast({ title: "PDF removed" });
   };
 
+  const audioResources = normalizeAudioResources(song.audioResources);
+  const primaryAudioResource = getPrimaryAudioResource(song);
+
   const avgCrowd = perfHistory.length
     ? Math.round((perfHistory.reduce((a, n) => a + n.crowdReaction, 0) / perfHistory.length) * 10) / 10
     : null;
@@ -557,6 +656,9 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
             )}
             {song.pdfUrl && (
               <Badge variant="outline" className="gap-1 border-primary/40 text-primary"><FileText className="w-3 h-3" /> PDF</Badge>
+            )}
+            {audioResources.length > 0 && (
+              <Badge variant="outline" className="gap-1 border-primary/40 text-primary"><Headphones className="w-3 h-3" /> Audio</Badge>
             )}
             {song.capo && song.capo !== "No capo" && <Badge className="capo-badge">{song.capo}</Badge>}
             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${DIFF_COLORS[song.difficulty]}`}>
@@ -580,6 +682,7 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
           <TabsList className="w-full rounded-none border-b bg-transparent justify-start px-6 h-10 gap-1">
             <TabsTrigger value="info" className="text-xs gap-1.5"><Info className="w-3 h-3" />Details</TabsTrigger>
             <TabsTrigger value="pdf" className="text-xs gap-1.5"><FileText className="w-3 h-3" />Sheet Music</TabsTrigger>
+            <TabsTrigger value="audio" className="text-xs gap-1.5"><Headphones className="w-3 h-3" />Audio</TabsTrigger>
             <TabsTrigger value="history" className="text-xs gap-1.5"><Star className="w-3 h-3" />Performance History</TabsTrigger>
             {onEdit && (
               <TabsTrigger value="edit" className="text-xs gap-1.5 ml-auto"><Pencil className="w-3 h-3" />Edit</TabsTrigger>
@@ -667,6 +770,11 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                   <FileText className="w-4 h-4" /> Open Sheet Music
                 </Button>
               )}
+              {primaryAudioResource && (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openAudioResource(primaryAudioResource)}>
+                  <PlayCircle className="w-4 h-4" /> Open {audioTypeShortLabel(primaryAudioResource.type)}
+                </Button>
+              )}
               {song.ultimateGuitarUrl && (
                 <a href={song.ultimateGuitarUrl} target="_blank" rel="noopener noreferrer" className="inline-flex">
                   <Button variant="outline" size="sm" className="gap-1.5 w-full sm:w-auto">
@@ -686,6 +794,41 @@ export function SongDetailModal({ song: initialSong, onClose, onDelete, onEdit, 
                   initialPage={pageNumber}
                 />
               </Suspense>
+            )}
+          </TabsContent>
+
+          {/* ── AUDIO TAB ── */}
+          <TabsContent value="audio" className="p-4 sm:p-6 mt-0 space-y-4">
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-primary/10 p-2 text-primary">
+                  <Headphones className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold">Recordings and backing tracks</div>
+                  <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                    Link this song to original recordings for practice, alternate references, or backing tracks for rehearsal and performance.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {audioResources.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground rounded-2xl border border-dashed border-border bg-muted/20">
+                <Headphones className="w-9 h-9 mx-auto mb-3 opacity-45" />
+                <p className="font-medium">No audio links yet</p>
+                <p className="text-sm mt-1">Use Edit to add an original recording, practice reference, or backing track.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {audioResources.map((resource) => <AudioResourceCard key={resource.id} resource={resource} />)}
+              </div>
+            )}
+
+            {onEdit && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => undefined} disabled>
+                <Pencil className="w-4 h-4" /> Edit audio links from the Edit tab
+              </Button>
             )}
           </TabsContent>
 

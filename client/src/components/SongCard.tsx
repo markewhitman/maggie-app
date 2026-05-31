@@ -1,9 +1,10 @@
 import type { Song } from "@/lib/data";
 import { formatDuration } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Clock, FileText, Guitar, ListPlus, Music, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileText, Guitar, Headphones, ListPlus, Music, UserPlus, Zap } from "lucide-react";
 import { StrumPattern } from "@/components/StrumPattern";
 import { getSongReadinessIssues, normalizeSongTags, readinessLabel, songNeedsReview } from "@/lib/songReadiness";
+import { audioTypeShortLabel, audioTypeTone, getPrimaryAudioResource, normalizeAudioResources } from "@/lib/audioResources";
 
 interface SongCardProps {
   song: Song;
@@ -42,6 +43,8 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
   const diffClass = DIFFICULTY_COLOR[song.difficulty as keyof typeof DIFFICULTY_COLOR] ?? DIFFICULTY_COLOR.Intermediate;
   const tempoIcon = TEMPO_ICON[song.tempoFeel as keyof typeof TEMPO_ICON] ?? "🎵";
   const hasCapo = song.capo && song.capo !== "No capo";
+  const audioResources = normalizeAudioResources(song.audioResources);
+  const primaryAudio = getPrimaryAudioResource(song);
 
   if (compact) {
     return (
@@ -58,6 +61,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {song.pdfUrl && <FileText className="w-3.5 h-3.5 text-primary" />}
+                {audioResources.length > 0 && <Headphones className="w-3.5 h-3.5 text-primary" />}
                 {song.userAdded && <UserPlus className="w-3.5 h-3.5 text-muted-foreground" />}
                 {needsReview && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
                 <span className="text-base leading-none">{tempoIcon}</span>
@@ -167,6 +171,11 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
           ) : (
             <Badge variant="outline" className="song-status-chip chip-missing text-xs px-1.5 py-0">
               No PDF
+            </Badge>
+          )}
+          {primaryAudio && (
+            <Badge variant="outline" className={`song-status-chip text-xs px-1.5 py-0 gap-1 ${audioTypeTone(primaryAudio.type)}`}>
+              <Headphones className="w-2.5 h-2.5" /> {audioTypeShortLabel(primaryAudio.type)}
             </Badge>
           )}
           {song.duration ? (

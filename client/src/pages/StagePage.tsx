@@ -91,8 +91,11 @@ import {
   ChevronUp,
   ChevronDown,
   ShieldCheck,
+  Headphones,
+  PlayCircle,
 } from "lucide-react";
 import { STAGE_SHORTCUTS, performanceControlsStore, shouldIgnorePerformanceShortcut } from "@/lib/performanceControls";
+import { getPrimaryAudioResource, openAudioResource } from "@/lib/audioResources";
 
 const FullscreenPdfViewer = lazy(() =>
   import("@/components/FullscreenPdfViewer").then((mod) => ({
@@ -912,8 +915,10 @@ function PerformanceModeView({
   projectedEndLabel,
   stageStartLabel,
   hasPdf,
+  hasAudio,
   onClose,
   onOpenSheet,
+  onOpenAudio,
   onAddNote,
   onMarkPlayed,
   onMarkSkipped,
@@ -935,8 +940,10 @@ function PerformanceModeView({
   projectedEndLabel: string | null;
   stageStartLabel: string | null;
   hasPdf: boolean;
+  hasAudio: boolean;
   onClose: () => void;
   onOpenSheet: () => void;
+  onOpenAudio: () => void;
   onAddNote: () => void;
   onMarkPlayed: () => void;
   onMarkSkipped: () => void;
@@ -1003,6 +1010,9 @@ function PerformanceModeView({
       } else if (lowerKey === "n") {
         event.preventDefault();
         onAddNote();
+      } else if (lowerKey === "t") {
+        event.preventDefault();
+        if (hasAudio) onOpenAudio();
       } else if (lowerKey === "r") {
         event.preventDefault();
         onOpenRequests();
@@ -1019,7 +1029,7 @@ function PerformanceModeView({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentSong, currentStatus, hasPdf, locked, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
+  }, [currentSong, currentStatus, hasAudio, hasPdf, locked, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenAudio, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
 
   return (
     <div className="fixed inset-0 z-50 performance-shell flex flex-col overflow-hidden">
@@ -1129,9 +1139,12 @@ function PerformanceModeView({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <Button size="lg" variant="outline" onClick={onOpenSheet} disabled={!hasPdf} className="performance-action performance-action-sheet gap-2">
                 <FileText className="w-5 h-5" /> Sheet
+              </Button>
+              <Button size="lg" variant="outline" onClick={onOpenAudio} disabled={!hasAudio} className="performance-action performance-action-sheet gap-2">
+                <PlayCircle className="w-5 h-5" /> Track
               </Button>
               <Button size="lg" variant="outline" onClick={onAddNote} className="performance-action performance-action-note gap-2">
                 <ClipboardList className="w-5 h-5" /> Note
@@ -1991,6 +2004,14 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
   const nextSongHasPdf = nextSong
     ? !!(pdfMap[nextSong.id]?.url ?? nextSong.pdfUrl)
     : false;
+  const nextSongHasAudio = nextSong ? Boolean(getPrimaryAudioResource(nextSong)) : false;
+
+  const openAudioForSong = (song: Song | null) => {
+    const resource = song ? getPrimaryAudioResource(song) : null;
+    if (!openAudioResource(resource)) {
+      toast({ title: "No recording or backing track", description: "Add an audio link on the song card first." });
+    }
+  };
 
   const getStatus = (song: Song): "played" | "skipped" | "pending" => {
     if (playedIds.includes(song.id)) return "played";
@@ -2731,6 +2752,8 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
           projectedEndLabel={projectedEndLabel}
           stageStartLabel={stageStartLabel}
           hasPdf={nextSongHasPdf}
+          hasAudio={nextSongHasAudio}
+          onOpenAudio={() => openAudioForSong(nextSong)}
           locked={performanceRouteLocked}
           onClose={() => {
             if (!performanceRouteLocked) setPerformanceMode(false);

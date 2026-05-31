@@ -4,7 +4,7 @@
 // ============================================================
 
 import { createClient } from "@supabase/supabase-js";
-import { SEED_SONGS, songsStore, type Song } from "./data";
+import { SEED_SONGS, songsStore, type Song, type SongAudioResource } from "./data";
 
 const SUPABASE_URL = "https://bephofcynjspsulmuikh.supabase.co";
 const SUPABASE_ANON_KEY =
@@ -124,6 +124,7 @@ export interface SbSong {
   pdf_url: string | null;
   pdf_asset_id: number | null;
   pdf_filename: string | null;
+  audio_resources?: SongAudioResource[] | null;
   user_added: boolean;
   is_deleted: boolean;
   created_at?: string;
@@ -163,6 +164,7 @@ function songToSbSong(song: Song, userId = getDeviceId(), isDeleted = false): Sb
     pdf_url: song.pdfUrl ?? null,
     pdf_asset_id: song.pdfAssetId ?? null,
     pdf_filename: song.pdfFilename ?? null,
+    audio_resources: song.audioResources ?? [],
     user_added: song.userAdded ?? !SEED_SONGS.some((s) => s.id === song.id),
     is_deleted: isDeleted,
   };
@@ -198,6 +200,7 @@ function sbSongToSong(row: SbSong): Song {
     pdfUrl: row.pdf_url ?? undefined,
     pdfAssetId: row.pdf_asset_id ?? undefined,
     pdfFilename: row.pdf_filename ?? undefined,
+    audioResources: row.audio_resources ?? undefined,
     userAdded: row.user_added,
   };
 }
@@ -267,6 +270,14 @@ export const sbSongs = {
     const { error } = await supabase
       .from("songs")
       .upsert(payload, { onConflict: "id,user_id" });
+    if (error && isMissingColumnError(error)) {
+      const { audio_resources: _audio, ...legacyPayload } = payload as unknown as Record<string, unknown>;
+      const retry = await supabase
+        .from("songs")
+        .upsert(legacyPayload, { onConflict: "id,user_id" });
+      if (retry.error) throw retry.error;
+      return;
+    }
     if (error) throw error;
   },
 

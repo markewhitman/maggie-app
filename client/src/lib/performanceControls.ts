@@ -58,6 +58,7 @@ export const STAGE_SHORTCUTS = [
   { keys: "S", action: "Skip current song" },
   { keys: "U", action: "Undo current song" },
   { keys: "M", action: "Open sheet music for current song" },
+  { keys: "T", action: "Open recording or backing track" },
   { keys: "N", action: "Open performance note" },
   { keys: "P", action: "Open Performance Mode" },
   { keys: "R", action: "Open audience requests" },

@@ -10,7 +10,8 @@ import type { Song } from "@/lib/data";
 import { sbPdfs, sbSongPdfs, sbSongs } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeSongPdf, enhanceSongPdfWithAi, confidenceLabel, type SmartPdfImportResult, type SmartImportSuggestion } from "@/lib/smartPdfImport";
-import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Loader2, Music, Sparkles, Tag, Upload, Wand2, X } from "lucide-react";
+import { createAudioResource, isValidAudioUrl } from "@/lib/audioResources";
+import { AlertTriangle, CheckCircle2, Clock, ExternalLink, FileText, Guitar, Headphones, Loader2, Music, Sparkles, Tag, Upload, Wand2, X } from "lucide-react";
 
 interface Props {
   onClose: () => void;
@@ -150,6 +151,8 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
     tags: "",
     performanceNote: "",
     ultimateGuitarUrl: "",
+    originalRecordingUrl: "",
+    backingTrackUrl: "",
   });
 
   const set = (k: keyof typeof form) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -318,6 +321,16 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
       }
     }
 
+    if (form.originalRecordingUrl.trim() && !isValidAudioUrl(form.originalRecordingUrl)) {
+      toast({ title: "Original recording link looks invalid", description: "Paste a full http:// or https:// link.", variant: "destructive" });
+      return;
+    }
+
+    if (form.backingTrackUrl.trim() && !isValidAudioUrl(form.backingTrackUrl)) {
+      toast({ title: "Backing track link looks invalid", description: "Paste a full http:// or https:// link.", variant: "destructive" });
+      return;
+    }
+
     const parsedYear = parseInt(form.year, 10) || new Date().getFullYear();
     const parsedDuration = parseDuration(durationInput);
     if (durationInput.trim() && !parsedDuration) {
@@ -341,6 +354,15 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
       }
 
       const tags = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const audioResources = [
+        form.originalRecordingUrl.trim()
+          ? createAudioResource({ type: "original", label: "Original recording", url: form.originalRecordingUrl })
+          : null,
+        form.backingTrackUrl.trim()
+          ? createAudioResource({ type: "backing", label: "Backing track", url: form.backingTrackUrl })
+          : null,
+      ].filter(Boolean) as Song["audioResources"];
+
       if (pdfFile) {
         if (!tags.includes("imported-from-pdf")) tags.push("imported-from-pdf");
         if (smartImport && !tags.includes("needs-review")) tags.push("needs-review");
@@ -373,6 +395,7 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
         pdfUrl,
         pdfAssetId: undefined,
         pdfFilename,
+        audioResources,
       };
 
       await sbSongs.upsert(song);
@@ -664,6 +687,32 @@ export function AddSongModal({ onClose, onSaved, existingSongs = [] }: Props) {
               <div className="sm:col-span-2 lg:col-span-3 space-y-1.5">
                 <Label className="text-xs">Tags (comma-separated)</Label>
                 <Input value={form.tags} onChange={(e) => set("tags")(e.target.value)} placeholder="crowd-pleaser, singalong, 80s" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader icon={<Headphones className="w-4 h-4" />} title="Practice audio and backing tracks" description="Optional links to original recordings, rehearsal references, or backing tracks." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Original recording URL</Label>
+                <Input
+                  value={form.originalRecordingUrl}
+                  onChange={(e) => set("originalRecordingUrl")(e.target.value)}
+                  placeholder="YouTube, Spotify, Apple Music…"
+                  inputMode="url"
+                />
+                <p className="text-[11px] text-muted-foreground">Use this as the reference version while learning or rehearsing.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Backing track URL</Label>
+                <Input
+                  value={form.backingTrackUrl}
+                  onChange={(e) => set("backingTrackUrl")(e.target.value)}
+                  placeholder="YouTube, Dropbox, Drive, SoundCloud…"
+                  inputMode="url"
+                />
+                <p className="text-[11px] text-muted-foreground">Optional track for practice or performance support.</p>
               </div>
             </div>
           </section>

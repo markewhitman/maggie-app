@@ -6,6 +6,15 @@
 
 // ─── Types ────────────────────────────────────────────────
 
+export interface SongAudioResource {
+  id: string;
+  label: string;
+  url: string;
+  type: "original" | "backing" | "practice" | "reference" | "other";
+  provider?: string;
+  notes?: string;
+}
+
 export interface Song {
   id: string;
   title: string;
@@ -36,6 +45,7 @@ export interface Song {
   pdfAssetId?: number;    // Legacy asset ID, retained only for older localStorage records
   pdfFilename?: string;   // original filename
   userAdded?: boolean;    // true if user created this song
+  audioResources?: SongAudioResource[]; // original recordings, practice links, and backing tracks
 }
 
 export interface Setlist {

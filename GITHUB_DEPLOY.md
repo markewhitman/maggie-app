@@ -342,3 +342,22 @@ This patch keeps the dedicated Perform tab distinct from Stage Manager:
 - Coming-up/full-set song clicks open details without switching to Manager.
 
 No Supabase migration or Edge Function redeploy is required for this phase.
+
+## Phase 5.20 — Song audio resources
+
+Phase 5.20 adds recording/backing-track links to song cards. Apply the Supabase migration before relying on cross-device sync:
+
+```sql
+supabase/migrations/20260531_phase5_20_song_audio_resources.sql
+```
+
+Then deploy normally:
+
+```bash
+npm run check
+npm run build:gh
+git add .
+git commit -m "Add song audio resource links"
+git push
+npm run deploy
+```
