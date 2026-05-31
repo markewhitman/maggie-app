@@ -305,3 +305,7 @@ Phase 5.18A adds a Gear page for cataloging performance gear and storing venue/s
 - Gear data is currently local to the browser and included in Maggie backup exports.
 - New route: `#/gear`.
 - Visual settings include dial, slider, and toggle graphics for quick soundcheck recall.
+
+### Phase 5.18B — Gear Setup Sheets + Pack Checklist
+
+Adds printable/copyable setup sheets, per-venue pack checklists, default venue setups, and preset-copy-to-venue workflow. No Supabase SQL migration or Edge Function deploy is required.

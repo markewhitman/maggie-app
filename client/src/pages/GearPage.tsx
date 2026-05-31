@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Cable,
+  CheckSquare,
   CircleGauge,
+  ClipboardList,
   Copy,
   Edit3,
+  FileText,
   Filter,
   MapPin,
   Plus,
+  Printer,
+  RotateCcw,
   Search,
   Settings2,
+  Share2,
+  Star,
   SlidersHorizontal,
   ToggleLeft,
   Trash2,
@@ -16,6 +23,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -35,6 +43,8 @@ import {
   type GearControlType,
   type GearItem,
   type GearPreset,
+  type PackChecklistState,
+  type VenueDefaultPresetMap,
 } from "@/lib/gear";
 import { sbVenues, type SbVenue } from "@/lib/supabase";
 import type { Venue } from "@/lib/data";
@@ -153,6 +163,134 @@ function ControlGraphic({ control }: { control: GearControl }) {
   if (control.type === "dial") return <DialGraphic control={control} />;
   if (control.type === "slider") return <SliderGraphic control={control} />;
   return <ToggleGraphic control={control} />;
+}
+
+
+interface VenueSetupBundle {
+  venue: Venue;
+  presets: GearPreset[];
+  gearItems: GearItem[];
+  defaultPreset?: GearPreset;
+}
+
+function uniqueGearForPresets(presets: GearPreset[], itemById: Map<string, GearItem>): GearItem[] {
+  const seen = new Set<string>();
+  return presets
+    .map((preset) => itemById.get(preset.gearId))
+    .filter((item): item is GearItem => Boolean(item))
+    .filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function setupSheetPlainText(bundle: VenueSetupBundle): string {
+  const lines: string[] = [];
+  lines.push(`${bundle.venue.name}${bundle.venue.city ? ` · ${bundle.venue.city}` : ""}`);
+  lines.push("Maggie setup sheet");
+  lines.push("");
+  if (bundle.defaultPreset) {
+    const gear = bundle.gearItems.find((item) => item.id === bundle.defaultPreset?.gearId);
+    lines.push(`Default setup: ${bundle.defaultPreset.name}${gear ? ` (${gear.name})` : ""}`);
+    lines.push("");
+  }
+  if (bundle.venue.notes) {
+    lines.push("Venue notes:");
+    lines.push(bundle.venue.notes);
+    lines.push("");
+  }
+  lines.push("Pack checklist:");
+  bundle.gearItems.forEach((item) => {
+    lines.push(`- [ ] ${item.name}${item.brandModel ? ` — ${item.brandModel}` : ""} (${categoryLabel(item.category)})`);
+    if (item.notes) lines.push(`      ${item.notes}`);
+  });
+  lines.push("");
+  lines.push("Setup presets:");
+  bundle.presets.forEach((preset) => {
+    const gear = bundle.gearItems.find((item) => item.id === preset.gearId);
+    lines.push(`- ${preset.name}${preset.id === bundle.defaultPreset?.id ? " [default]" : ""}`);
+    lines.push(`  Gear: ${gear?.name ?? "Unknown gear"}${gear?.brandModel ? ` — ${gear.brandModel}` : ""}`);
+    if (preset.situation) lines.push(`  Situation: ${preset.situation}`);
+    if (preset.notes) lines.push(`  Notes: ${preset.notes}`);
+    if (preset.controls.length) {
+      lines.push("  Settings:");
+      preset.controls.forEach((control) => lines.push(`    • ${control.label}: ${controlValueLabel(control)}`));
+    }
+  });
+  return lines.join("\n");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function printSetupSheet(bundle: VenueSetupBundle): void {
+  const defaultText = bundle.defaultPreset ? `<p><strong>Default setup:</strong> ${escapeHtml(bundle.defaultPreset.name)}</p>` : "";
+  const venueNotes = bundle.venue.notes ? `<section><h2>Venue notes</h2><p>${escapeHtml(bundle.venue.notes).replace(/\n/g, "<br />")}</p></section>` : "";
+  const gearList = bundle.gearItems.map((item) => `
+    <li>
+      <span class="box"></span>
+      <strong>${escapeHtml(item.name)}</strong>${item.brandModel ? ` — ${escapeHtml(item.brandModel)}` : ""}
+      <em>${escapeHtml(categoryLabel(item.category))}</em>
+      ${item.notes ? `<div class="note">${escapeHtml(item.notes).replace(/\n/g, "<br />")}</div>` : ""}
+    </li>
+  `).join("");
+  const presetCards = bundle.presets.map((preset) => {
+    const gear = bundle.gearItems.find((item) => item.id === preset.gearId);
+    const controls = preset.controls.map((control) => `<li>${escapeHtml(control.label)}: <strong>${escapeHtml(controlValueLabel(control))}</strong></li>`).join("");
+    return `
+      <article class="preset">
+        <h3>${escapeHtml(preset.name)}${preset.id === bundle.defaultPreset?.id ? " <span>Default</span>" : ""}</h3>
+        <p><strong>Gear:</strong> ${escapeHtml(gear?.name ?? "Unknown gear")}${gear?.brandModel ? ` — ${escapeHtml(gear.brandModel)}` : ""}</p>
+        ${preset.situation ? `<p><strong>Situation:</strong> ${escapeHtml(preset.situation)}</p>` : ""}
+        ${preset.notes ? `<p><strong>Notes:</strong> ${escapeHtml(preset.notes).replace(/\n/g, "<br />")}</p>` : ""}
+        ${controls ? `<ul>${controls}</ul>` : ""}
+      </article>
+    `;
+  }).join("");
+
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(bundle.venue.name)} setup sheet</title>
+<style>
+  body { font-family: Inter, Arial, sans-serif; color: #171717; margin: 32px; line-height: 1.45; }
+  h1 { font-family: Georgia, serif; font-style: italic; margin: 0 0 4px; }
+  h2 { margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .muted { color: #666; margin-top: 0; }
+  .box { display: inline-block; width: 14px; height: 14px; border: 2px solid #333; margin-right: 8px; vertical-align: -2px; }
+  .pack li { margin: 9px 0; }
+  .pack em { color: #666; font-style: normal; margin-left: 6px; }
+  .note { margin-left: 28px; color: #555; font-size: 13px; }
+  .preset { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; page-break-inside: avoid; }
+  .preset h3 { margin: 0 0 6px; }
+  .preset span { border: 1px solid #999; border-radius: 999px; padding: 2px 7px; font-size: 11px; text-transform: uppercase; }
+  @media print { body { margin: 18mm; } button { display: none; } }
+</style>
+</head>
+<body>
+  <button onclick="window.print()">Print</button>
+  <h1>${escapeHtml(bundle.venue.name)}</h1>
+  <p class="muted">Maggie setup sheet${bundle.venue.city ? ` · ${escapeHtml(bundle.venue.city)}` : ""}</p>
+  ${defaultText}
+  ${venueNotes}
+  <section><h2>Pack checklist</h2><ul class="pack">${gearList}</ul></section>
+  <section><h2>Setup presets</h2>${presetCards || "<p>No setup presets saved.</p>"}</section>
+</body>
+</html>`;
+  const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=1100");
+  if (!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
 }
 
 function defaultControlsForCategory(category: GearCategory): GearControl[] {
@@ -410,6 +548,7 @@ function PresetCard({
   venues,
   onEdit,
   onDuplicate,
+  onCopyToVenue,
   onDelete,
 }: {
   preset: GearPreset;
@@ -417,6 +556,7 @@ function PresetCard({
   venues: Venue[];
   onEdit: () => void;
   onDuplicate: () => void;
+  onCopyToVenue: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -433,7 +573,8 @@ function PresetCard({
           </div>
           <div className="flex gap-1 shrink-0">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}><Edit3 className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDuplicate}><Copy className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicate preset" onClick={onDuplicate}><Copy className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Copy to venue" onClick={onCopyToVenue}><Share2 className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
         </div>
@@ -468,12 +609,19 @@ export default function GearPage() {
   const [showPresetForm, setShowPresetForm] = useState(false);
   const [editingPreset, setEditingPreset] = useState<GearPreset | null>(null);
   const [preferredGearId, setPreferredGearId] = useState<string | undefined>();
+  const [venueDefaults, setVenueDefaults] = useState<VenueDefaultPresetMap>({});
+  const [packState, setPackState] = useState<PackChecklistState>({});
+  const [setupSheetVenueId, setSetupSheetVenueId] = useState<string | null>(null);
+  const [copyPresetTarget, setCopyPresetTarget] = useState<GearPreset | null>(null);
+  const [copyToVenueId, setCopyToVenueId] = useState("any");
   const { toast } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const reload = () => {
     setItems(gearStore.getItems());
     setPresets(gearStore.getPresets());
+    setVenueDefaults(gearStore.getVenueDefaults());
+    setPackState(gearStore.getPackChecklist());
   };
 
   useEffect(() => {
@@ -510,11 +658,37 @@ export default function GearPage() {
       const key = preset.venueId as string;
       byVenue.set(key, [...(byVenue.get(key) ?? []), preset]);
     });
-    return Array.from(byVenue.entries()).map(([venueId, venuePresets]) => ({
-      venue: venues.find((venue) => venue.id === venueId),
-      presets: venuePresets,
-    })).filter((group) => group.venue);
-  }, [presets, venues]);
+    return Array.from(byVenue.entries()).map(([venueId, venuePresets]) => {
+      const defaultPresetId = venueDefaults[venueId];
+      const defaultPreset = venuePresets.find((preset) => preset.id === defaultPresetId);
+      const sortedPresets = [...venuePresets].sort((a, b) => {
+        if (a.id === defaultPresetId) return -1;
+        if (b.id === defaultPresetId) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return {
+        venue: venues.find((venue) => venue.id === venueId),
+        presets: sortedPresets,
+        defaultPreset,
+        gearItems: uniqueGearForPresets(sortedPresets, itemById),
+      };
+    }).filter((group) => group.venue);
+  }, [presets, venues, venueDefaults, itemById]);
+
+  const activeSetupGroup = useMemo(() => {
+    if (!setupSheetVenueId) return null;
+    return venueSetupGroups.find((group) => group.venue?.id === setupSheetVenueId) ?? null;
+  }, [setupSheetVenueId, venueSetupGroups]);
+
+  const activeSetupBundle = useMemo<VenueSetupBundle | null>(() => {
+    if (!activeSetupGroup?.venue) return null;
+    return {
+      venue: activeSetupGroup.venue,
+      presets: activeSetupGroup.presets,
+      gearItems: activeSetupGroup.gearItems,
+      defaultPreset: activeSetupGroup.defaultPreset,
+    };
+  }, [activeSetupGroup]);
 
   const handleSaveGear = (item: GearItem) => {
     gearStore.saveItem(item);
@@ -570,6 +744,48 @@ export default function GearPage() {
     });
     reload();
     toast({ title: "Preset duplicated" });
+  };
+
+  const handleCopyPresetToVenue = () => {
+    if (!copyPresetTarget) return;
+    gearStore.savePreset({
+      ...copyPresetTarget,
+      id: undefined,
+      name: copyToVenueId === "any" ? `${copyPresetTarget.name} copy` : `${copyPresetTarget.name} venue copy`,
+      venueId: copyToVenueId === "any" ? undefined : copyToVenueId,
+      controls: copyPresetTarget.controls.map((control) => ({ ...control, id: uid() })),
+      createdAt: undefined,
+    });
+    reload();
+    setCopyPresetTarget(null);
+    setCopyToVenueId("any");
+    toast({ title: "Preset copied", description: copyToVenueId === "any" ? "Saved as an any-venue preset." : `Copied to ${venueLabel(copyToVenueId, venues)}.` });
+  };
+
+  const handleSetVenueDefault = (venueId: string, presetId: string) => {
+    gearStore.setVenueDefault(venueId, presetId);
+    reload();
+    toast({ title: "Default setup saved", description: "This preset will be featured on the setup sheet." });
+  };
+
+  const handleTogglePack = (venueId: string, gearId: string, checked: boolean) => {
+    gearStore.setPackChecked(venueId, gearId, checked);
+    reload();
+  };
+
+  const handleResetPack = (venueId: string) => {
+    gearStore.resetPackChecklist(venueId);
+    reload();
+    toast({ title: "Pack checklist reset" });
+  };
+
+  const handleCopySetupSheet = async (bundle: VenueSetupBundle) => {
+    try {
+      await navigator.clipboard.writeText(setupSheetPlainText(bundle));
+      toast({ title: "Setup sheet copied", description: "Paste it into a message, notes app, or print document." });
+    } catch {
+      toast({ title: "Copy failed", description: "Your browser blocked clipboard access.", variant: "destructive" });
+    }
   };
 
   const totalControls = presets.reduce((sum, preset) => sum + preset.controls.length, 0);
@@ -646,6 +862,7 @@ export default function GearPage() {
                 venues={venues}
                 onEdit={() => { setEditingPreset(preset); setShowPresetForm(true); }}
                 onDuplicate={() => handleDuplicatePreset(preset)}
+                onCopyToVenue={() => { setCopyPresetTarget(preset); setCopyToVenueId(preset.venueId ?? "any"); }}
                 onDelete={() => handleDeletePreset(preset)}
               />
             ))
@@ -695,34 +912,84 @@ export default function GearPage() {
           {venueSetupGroups.length === 0 ? (
             <Card><CardContent className="py-14 text-center text-muted-foreground"><MapPin className="h-8 w-8 mx-auto mb-3 opacity-50" /><p className="font-medium">No venue-specific setups yet</p><p className="text-sm mt-1">Attach presets to venues to build soundcheck memory over time.</p></CardContent></Card>
           ) : (
-            venueSetupGroups.map(({ venue, presets: venuePresets }) => (
-              <Card key={venue!.id}>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {venue!.name}</CardTitle>
-                  <CardDescription>{venue!.city || "Saved venue"} · {venuePresets.length} setup preset{venuePresets.length === 1 ? "" : "s"}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {venue!.notes && <p className="text-sm text-muted-foreground">{venue!.notes}</p>}
-                  <div className="grid md:grid-cols-2 gap-3">
-                    {venuePresets.map((preset) => (
-                      <div key={preset.id} className="rounded-xl border border-border p-3 space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="font-semibold text-sm">{preset.name}</div>
-                            <div className="text-xs text-muted-foreground">{itemById.get(preset.gearId)?.name ?? "Unknown gear"}</div>
-                          </div>
-                          {preset.situation && <Badge variant="outline">{preset.situation}</Badge>}
-                        </div>
-                        {preset.notes && <p className="text-xs text-muted-foreground leading-relaxed">{preset.notes}</p>}
-                        <div className="grid sm:grid-cols-2 gap-2">
-                          {preset.controls.slice(0, 4).map((control) => <ControlGraphic key={control.id} control={control} />)}
-                        </div>
+            venueSetupGroups.map(({ venue, presets: venuePresets, defaultPreset, gearItems }) => {
+              const venueId = venue!.id;
+              const checkedMap = packState[venueId] ?? {};
+              const packedCount = gearItems.filter((gear) => checkedMap[gear.id]).length;
+              return (
+                <Card key={venueId}>
+                  <CardHeader>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {venue!.name}</CardTitle>
+                        <CardDescription>{venue!.city || "Saved venue"} · {venuePresets.length} setup preset{venuePresets.length === 1 ? "" : "s"} · {gearItems.length} gear item{gearItems.length === 1 ? "" : "s"}</CardDescription>
+                        {defaultPreset && <Badge variant="secondary" className="mt-2"><Star className="h-3 w-3 mr-1 fill-current" /> Default: {defaultPreset.name}</Badge>}
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setSetupSheetVenueId(venueId)}>
+                          <ClipboardList className="h-3.5 w-3.5 mr-1.5" /> Setup sheet
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const bundle: VenueSetupBundle = { venue: venue!, presets: venuePresets, gearItems, defaultPreset };
+                          printSetupSheet(bundle);
+                        }}>
+                          <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {venue!.notes && <p className="text-sm text-muted-foreground">{venue!.notes}</p>}
+
+                    <div className="rounded-xl border border-border bg-muted/25 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div>
+                          <div className="text-sm font-semibold flex items-center gap-2"><CheckSquare className="h-4 w-4 text-primary" /> Pack checklist</div>
+                          <div className="text-xs text-muted-foreground">{packedCount}/{gearItems.length} checked for this venue</div>
+                        </div>
+                        <Button size="sm" variant="ghost" onClick={() => handleResetPack(venueId)}><RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset</Button>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {gearItems.map((gear) => (
+                          <label key={gear.id} className="flex items-start gap-2 rounded-lg bg-background/70 border border-border p-2 text-sm cursor-pointer">
+                            <Checkbox checked={Boolean(checkedMap[gear.id])} onCheckedChange={(checked) => handleTogglePack(venueId, gear.id, checked === true)} />
+                            <span className="min-w-0">
+                              <span className="font-medium block truncate">{gear.name}</span>
+                              <span className="text-xs text-muted-foreground">{gear.brandModel || categoryLabel(gear.category)}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {venuePresets.map((preset) => {
+                        const gear = itemById.get(preset.gearId);
+                        const isDefault = preset.id === defaultPreset?.id;
+                        return (
+                          <div key={preset.id} className={`rounded-xl border p-3 space-y-2 ${isDefault ? "border-primary bg-primary/5" : "border-border"}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-semibold text-sm flex items-center gap-1.5">{preset.name}{isDefault && <Star className="h-3.5 w-3.5 text-primary fill-current" />}</div>
+                                <div className="text-xs text-muted-foreground">{gear?.name ?? "Unknown gear"}</div>
+                              </div>
+                              <div className="flex flex-wrap gap-1 justify-end">
+                                {preset.situation && <Badge variant="outline">{preset.situation}</Badge>}
+                                {!isDefault && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => handleSetVenueDefault(venueId, preset.id)}>Make default</Button>}
+                              </div>
+                            </div>
+                            {preset.notes && <p className="text-xs text-muted-foreground leading-relaxed">{preset.notes}</p>}
+                            <div className="grid sm:grid-cols-2 gap-2">
+                              {preset.controls.slice(0, 4).map((control) => <ControlGraphic key={control.id} control={control} />)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </TabsContent>
       </Tabs>
@@ -751,6 +1018,128 @@ export default function GearPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={Boolean(activeSetupBundle)} onOpenChange={(open) => { if (!open) setSetupSheetVenueId(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display italic flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-primary" /> {activeSetupBundle?.venue.name ?? "Venue"} Setup Sheet
+            </DialogTitle>
+          </DialogHeader>
+          {activeSetupBundle && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => handleCopySetupSheet(activeSetupBundle)}>
+                  <Copy className="h-4 w-4 mr-1.5" /> Copy sheet
+                </Button>
+                <Button variant="outline" onClick={() => printSetupSheet(activeSetupBundle)}>
+                  <Printer className="h-4 w-4 mr-1.5" /> Print sheet
+                </Button>
+                <Button variant="ghost" onClick={() => handleResetPack(activeSetupBundle.venue.id)}>
+                  <RotateCcw className="h-4 w-4 mr-1.5" /> Reset checklist
+                </Button>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Venue summary</CardTitle>
+                  <CardDescription>{activeSetupBundle.venue.city || "Saved venue"}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {activeSetupBundle.defaultPreset ? (
+                    <div className="rounded-lg bg-primary/10 border border-primary/25 p-3">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Default setup</div>
+                      <div className="font-semibold flex items-center gap-1.5"><Star className="h-4 w-4 text-primary fill-current" /> {activeSetupBundle.defaultPreset.name}</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-muted/40 border border-dashed border-border p-3 text-muted-foreground">No default setup selected yet. Mark one venue preset as default from the Venue setups tab.</div>
+                  )}
+                  {activeSetupBundle.venue.notes && <p className="text-muted-foreground whitespace-pre-wrap">{activeSetupBundle.venue.notes}</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2"><CheckSquare className="h-4 w-4 text-primary" /> Pack checklist</CardTitle>
+                  <CardDescription>Check off gear as it is packed for this venue. The checklist is saved on this device.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid sm:grid-cols-2 gap-2">
+                  {activeSetupBundle.gearItems.map((gear) => {
+                    const checked = Boolean(packState[activeSetupBundle.venue.id]?.[gear.id]);
+                    return (
+                      <label key={gear.id} className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 cursor-pointer">
+                        <Checkbox checked={checked} onCheckedChange={(value) => handleTogglePack(activeSetupBundle.venue.id, gear.id, value === true)} />
+                        <span className="min-w-0">
+                          <span className="font-semibold block truncate">{gear.name}</span>
+                          <span className="text-xs text-muted-foreground">{gear.brandModel || categoryLabel(gear.category)}</span>
+                          {gear.notes && <span className="block text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{gear.notes}</span>}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <h3 className="font-semibold">Setup presets</h3>
+                </div>
+                {activeSetupBundle.presets.map((preset) => {
+                  const gear = itemById.get(preset.gearId);
+                  const isDefault = preset.id === activeSetupBundle.defaultPreset?.id;
+                  return (
+                    <Card key={preset.id} className={isDefault ? "border-primary" : undefined}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <CardTitle className="text-base flex items-center gap-1.5">{preset.name}{isDefault && <Star className="h-4 w-4 text-primary fill-current" />}</CardTitle>
+                            <CardDescription>{gear?.name ?? "Unknown gear"}{gear?.brandModel ? ` · ${gear.brandModel}` : ""}</CardDescription>
+                          </div>
+                          {!isDefault && <Button size="sm" variant="outline" onClick={() => handleSetVenueDefault(activeSetupBundle.venue.id, preset.id)}>Make default</Button>}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {preset.notes && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{preset.notes}</p>}
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {preset.controls.map((control) => <ControlGraphic key={control.id} control={control} />)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(copyPresetTarget)} onOpenChange={(open) => { if (!open) { setCopyPresetTarget(null); setCopyToVenueId("any"); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="font-display italic">Copy Preset to Venue</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Preset</div>
+              <div className="font-semibold">{copyPresetTarget?.name}</div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Copy to</Label>
+              <Select value={copyToVenueId} onValueChange={setCopyToVenueId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any venue</SelectItem>
+                  {venues.map((venue) => <SelectItem key={venue.id} value={venue.id}>{venue.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={handleCopyPresetToVenue}><Share2 className="h-4 w-4 mr-1.5" /> Copy preset</Button>
+              <Button variant="outline" onClick={() => { setCopyPresetTarget(null); setCopyToVenueId("any"); }}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

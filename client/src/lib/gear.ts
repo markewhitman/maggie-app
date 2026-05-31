@@ -48,6 +48,8 @@ export interface GearPreset {
 
 const GEAR_KEY = "maggie_gear_items_v1";
 const PRESET_KEY = "maggie_gear_presets_v1";
+const VENUE_DEFAULTS_KEY = "maggie_gear_venue_default_presets_v1";
+const PACK_CHECK_KEY = "maggie_gear_pack_check_v1";
 
 export const GEAR_CATEGORIES: { value: GearCategory; label: string }[] = [
   { value: "guitar", label: "Guitar" },
@@ -93,6 +95,9 @@ export function parseTags(value: string): string[] {
 export function categoryLabel(category: GearCategory): string {
   return GEAR_CATEGORIES.find((item) => item.value === category)?.label ?? "Other";
 }
+
+export type VenueDefaultPresetMap = Record<string, string>;
+export type PackChecklistState = Record<string, Record<string, boolean>>;
 
 export const gearStore = {
   getItems(): GearItem[] {
@@ -142,9 +147,44 @@ export const gearStore = {
 
   deletePreset(id: string): void {
     write(PRESET_KEY, this.getPresets().filter((preset) => preset.id !== id));
+    const defaults = this.getVenueDefaults();
+    const changed = Object.fromEntries(Object.entries(defaults).filter(([, presetId]) => presetId !== id));
+    write(VENUE_DEFAULTS_KEY, changed);
   },
 
-  exportAll(): { items: GearItem[]; presets: GearPreset[] } {
-    return { items: this.getItems(), presets: this.getPresets() };
+  getVenueDefaults(): VenueDefaultPresetMap {
+    return read<VenueDefaultPresetMap>(VENUE_DEFAULTS_KEY, {});
+  },
+
+  setVenueDefault(venueId: string, presetId?: string): void {
+    const defaults = this.getVenueDefaults();
+    if (!presetId) delete defaults[venueId];
+    else defaults[venueId] = presetId;
+    write(VENUE_DEFAULTS_KEY, defaults);
+  },
+
+  getPackChecklist(): PackChecklistState {
+    return read<PackChecklistState>(PACK_CHECK_KEY, {});
+  },
+
+  setPackChecked(venueId: string, gearId: string, checked: boolean): void {
+    const state = this.getPackChecklist();
+    state[venueId] = { ...(state[venueId] ?? {}), [gearId]: checked };
+    write(PACK_CHECK_KEY, state);
+  },
+
+  resetPackChecklist(venueId: string): void {
+    const state = this.getPackChecklist();
+    delete state[venueId];
+    write(PACK_CHECK_KEY, state);
+  },
+
+  exportAll(): { items: GearItem[]; presets: GearPreset[]; venueDefaults: VenueDefaultPresetMap; packChecklist: PackChecklistState } {
+    return {
+      items: this.getItems(),
+      presets: this.getPresets(),
+      venueDefaults: this.getVenueDefaults(),
+      packChecklist: this.getPackChecklist(),
+    };
   },
 };
