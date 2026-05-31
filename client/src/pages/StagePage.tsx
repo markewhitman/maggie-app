@@ -1735,14 +1735,14 @@ function RequestsPanel({
 
 // ─── Main Page ────────────────────────────────────────────
 
-export default function StagePage() {
+export default function StagePage({ defaultPerformance = false }: { defaultPerformance?: boolean } = {}) {
   const [songs, setSongs] = useState<Song[]>(SEED_SONGS);
   const [session, setSessionState] = useState<Session | null>(null);
   const [currentSetlist, setCurrentSetlist] = useState<SbSetlist | null>(null);
   const [requestScopeId, setRequestScopeId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
-  const [performanceMode, setPerformanceMode] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState(defaultPerformance);
   const [showAudienceShare, setShowAudienceShare] = useState(false);
   const [showReadiness, setShowReadiness] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -2317,17 +2317,17 @@ export default function StagePage() {
       <StageShortcutHelpDialog open={showShortcutHelp} onClose={() => setShowShortcutHelp(false)} />
 
       {/* Header */}
-      <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="stage-manager-header mb-5">
         <div className="min-w-0 flex-1 stage-manager-banner">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <span className="view-chip"><Mic2 className="w-3.5 h-3.5" /> Control view</span>
+              <span className="view-chip"><Mic2 className="w-3.5 h-3.5" /> Stage Manager</span>
               <h1 className="font-display font-bold text-2xl italic mt-2 mb-0.5">
                 Stage Manager
               </h1>
               <p className="text-muted-foreground text-sm max-w-2xl">
-                Manage the set, requests, readiness, timing, and edits before or between songs.
-                Use <strong>Performance</strong> for the cleaner live view.
+                Control the set, requests, readiness, timing, and edits before or between songs.
+                Use the <strong>Perform</strong> tab for the cleaner live view.
               </p>
             </div>
             <div className="rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2 text-right min-w-[8rem]">
@@ -2392,7 +2392,7 @@ export default function StagePage() {
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <div className="stage-manager-actions">
           <Button
             variant="outline"
             size="sm"

@@ -38,6 +38,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
   const readiness = readinessLabel(song);
   const issues = getSongReadinessIssues(song);
   const needsReview = songNeedsReview(song);
+  const displayIssues = issues.filter((issue) => !["pdf", "duration"].includes(issue.key));
   const diffClass = DIFFICULTY_COLOR[song.difficulty as keyof typeof DIFFICULTY_COLOR] ?? DIFFICULTY_COLOR.Intermediate;
   const tempoIcon = TEMPO_ICON[song.tempoFeel as keyof typeof TEMPO_ICON] ?? "🎵";
   const hasCapo = song.capo && song.capo !== "No capo";
@@ -46,7 +47,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
     return (
       <div
         data-testid={`card-song-${song.id}`}
-        className="song-card w-full rounded-xl border border-border bg-card hover:border-primary/40 transition-colors overflow-hidden"
+        className="song-card song-card-accessible w-full rounded-xl border border-border bg-card hover:border-primary/40 transition-colors overflow-hidden"
       >
         <div className="flex items-stretch gap-1">
           <button onClick={onClick} className="flex-1 min-w-0 px-3 py-3 text-left">
@@ -87,7 +88,7 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
   return (
     <div
       data-testid={`card-song-${song.id}`}
-      className="song-card w-full rounded-xl border border-border bg-card hover:border-primary/50 transition-colors overflow-hidden"
+      className="song-card song-card-accessible w-full rounded-xl border border-border bg-card hover:border-primary/50 transition-colors overflow-hidden"
     >
       <button onClick={onClick} className="w-full text-left p-4 cursor-pointer">
         {/* Top row */}
@@ -147,9 +148,9 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
           </div>
         )}
 
-        {issues.length > 0 && (
+        {displayIssues.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
-            {issues.slice(0, 4).map((issue) => (
+            {displayIssues.slice(0, 3).map((issue) => (
               <Badge key={issue.key} variant="outline" className={`text-[10px] px-1.5 py-0 ${issue.severity === "warning" ? "border-amber-300/60 text-amber-700 dark:text-amber-300" : "text-muted-foreground border-border"}`}>
                 {issue.label}
               </Badge>
@@ -160,12 +161,21 @@ export function SongCard({ song, onClick, compact = false, onAddToSetlist }: Son
         {/* Tags + PDF indicator */}
         <div className="flex flex-wrap gap-1 items-center">
           {song.pdfUrl ? (
-            <Badge variant="outline" className="text-xs px-1.5 py-0 gap-1 border-primary/40 text-primary">
+            <Badge variant="outline" className="song-status-chip chip-pdf text-xs px-1.5 py-0 gap-1">
               <FileText className="w-2.5 h-2.5" /> Sheet PDF
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground border-border">
+            <Badge variant="outline" className="song-status-chip chip-missing text-xs px-1.5 py-0">
               No PDF
+            </Badge>
+          )}
+          {song.duration ? (
+            <Badge variant="outline" className="song-status-chip chip-time text-xs px-1.5 py-0 gap-1">
+              <Clock className="w-2.5 h-2.5" /> {formatDuration(song.duration)}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="song-status-chip chip-missing text-xs px-1.5 py-0">
+              Add time
             </Badge>
           )}
           {song.genre && (

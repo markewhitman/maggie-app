@@ -327,3 +327,7 @@ No Supabase SQL migration or Edge Function redeploy is required for this phase.
 - Adds Settings → Appearance → Visual Clarity mode for stronger outlines, larger labels, dyslexia-friendly typography, and lower cognitive load.
 - Makes Stage Manager feel like a control console and Performance Mode feel like a dedicated live performer cockpit.
 - No Supabase SQL migration or Edge Function redeploy is required.
+
+## Phase 5.19.1 UI refinement
+
+Phase 5.19.1 adds a separate Perform tab, fixes the Stage Manager header compression issue, improves Performance Mode contrast, and strengthens song-card accessibility/readiness indicators. No SQL migration or Edge Function redeploy is required.

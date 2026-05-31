@@ -33,6 +33,14 @@ function GearRoute() {
   );
 }
 
+function StageRoute() {
+  return <StagePage />;
+}
+
+function PerformanceRoute() {
+  return <StagePage defaultPerformance />;
+}
+
 function RoutedContent() {
   const [location] = useLocation();
   const normalizedLocation = location === "" ? "/" : location;
@@ -49,7 +57,8 @@ function RoutedContent() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/setlists" component={SetlistPage} />
-        <Route path="/stage" component={StagePage} />
+        <Route path="/stage" component={StageRoute} />
+        <Route path="/performance" component={PerformanceRoute} />
         <Route path="/venues" component={VenuesPage} />
         <Route path="/history" component={HistoryRoute} />
         <Route path="/gear" component={GearRoute} />
