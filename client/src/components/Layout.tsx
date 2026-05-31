@@ -28,8 +28,8 @@ const NAV_GROUPS = [
   {
     label: "Live",
     items: [
-      { href: "/stage", label: "Manager", icon: Mic2, tone: "39 96% 52%", toneFg: "220 24% 7%", help: "Set control" },
       { href: "/performance", label: "Perform", icon: Timer, tone: "145 62% 36%", toneFg: "0 0% 100%", help: "Clean live view" },
+      { href: "/stage", label: "Manager", icon: Mic2, tone: "39 96% 52%", toneFg: "220 24% 7%", help: "Set control" },
       { href: "/audience", label: "Audience", icon: Users, tone: "329 78% 54%", toneFg: "0 0% 100%", help: "Request link" },
     ],
   },

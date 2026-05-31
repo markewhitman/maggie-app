@@ -331,3 +331,14 @@ No Supabase SQL migration or Edge Function redeploy is required for this phase.
 ## Phase 5.19.1 UI refinement
 
 Phase 5.19.1 adds a separate Perform tab, fixes the Stage Manager header compression issue, improves Performance Mode contrast, and strengthens song-card accessibility/readiness indicators. No SQL migration or Edge Function redeploy is required.
+
+## Phase 5.19.2 — Performance Tab Flow Fixes
+
+This patch keeps the dedicated Perform tab distinct from Stage Manager:
+
+- Live navigation order is now Perform, Manager, Audience.
+- Sheet music and Notes opened from Perform return to Perform when closed.
+- Perform includes a compact full setlist and clickable coming-up songs.
+- Coming-up/full-set song clicks open details without switching to Manager.
+
+No Supabase migration or Edge Function redeploy is required for this phase.

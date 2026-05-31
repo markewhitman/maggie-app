@@ -921,6 +921,8 @@ function PerformanceModeView({
   onUndoLast,
   onOpenRequests,
   onOpenRecap,
+  onOpenSong,
+  locked = false,
 }: {
   currentSong: Song | null;
   upcoming: Song[];
@@ -942,6 +944,8 @@ function PerformanceModeView({
   onUndoLast: () => void;
   onOpenRequests: () => void;
   onOpenRecap: () => void;
+  onOpenSong: (song: Song) => void;
+  locked?: boolean;
 }) {
   const [showFullSet, setShowFullSet] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
@@ -1010,12 +1014,12 @@ function PerformanceModeView({
         setShowFullSet((value) => !value);
       } else if (lowerKey === "p") {
         event.preventDefault();
-        onClose();
+        if (!locked) onClose();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
+  }, [currentSong, currentStatus, hasPdf, locked, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
 
   return (
     <div className="fixed inset-0 z-50 performance-shell flex flex-col overflow-hidden">
@@ -1040,16 +1044,18 @@ function PerformanceModeView({
           <Button variant="outline" size="sm" onClick={onOpenRecap} className="gap-1.5 h-10">
             <ClipboardList className="w-4 h-4" /> Recap
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowFullSet((p) => !p)} className="gap-1.5 h-10">
-            <ListMusic className="w-4 h-4" /> Set
+          <Button variant="outline" size="sm" onClick={() => setShowFullSet((p) => !p)} className="gap-1.5 h-10" title="Jump to the full setlist below">
+            <ListMusic className="w-4 h-4" /> Setlist
             {showFullSet ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowShortcutHelp((value) => !value)} className="gap-1.5 h-10">
             <Keyboard className="w-4 h-4" /> Keys
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-10">
-            <X className="w-4 h-4" />
-          </Button>
+          {!locked && (
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-10" title="Return to Stage Manager">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1149,56 +1155,68 @@ function PerformanceModeView({
                 <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-2">Coming up</div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {upcoming.slice(1, 4).map((song, i) => (
-                    <div key={song.id} className="rounded-xl bg-muted/45 px-3 py-2">
+                    <button
+                      key={song.id}
+                      type="button"
+                      onClick={() => onOpenSong(song)}
+                      className="rounded-xl bg-muted/45 px-3 py-2 text-left border border-transparent transition-colors hover:border-primary/50 hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/60"
+                      title={`Open ${song.title}`}
+                    >
                       <div className="text-[10px] text-muted-foreground">Next +{i + 1}</div>
                       <div className="font-semibold truncate">{song.title}</div>
                       <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {showFullSet && (
-              <div className="performance-set-card overflow-hidden">
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">Full set fallback</div>
-                    <div className="text-xs text-muted-foreground">Use this if you need to jump around quickly.</div>
-                  </div>
+            <div className="performance-set-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold">Full setlist</div>
+                  <div className="text-xs text-muted-foreground">Tap any song to open its card without switching to Manager.</div>
                 </div>
-                <div className="max-h-[42vh] overflow-y-auto divide-y divide-border/60">
-                  {orderedSongs.map((song, index) => {
-                    const status = playedIds.includes(song.id)
-                      ? "played"
-                      : skippedIds.includes(song.id)
-                        ? "skipped"
-                        : song.id === currentSong.id
-                          ? "current"
-                          : "pending";
-                    return (
-                      <div key={`${song.id}-${index}`} className={`flex items-center gap-3 px-4 py-3 ${status === "current" ? "bg-primary/10" : ""}`}>
-                        <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
+                <Badge variant="outline" className="shrink-0">{orderedSongs.length} songs</Badge>
+              </div>
+              <div className={`${showFullSet ? "max-h-[48vh]" : "max-h-[30vh]"} overflow-y-auto divide-y divide-border/60`}>
+                {orderedSongs.map((song, index) => {
+                  const status = playedIds.includes(song.id)
+                    ? "played"
+                    : skippedIds.includes(song.id)
+                      ? "skipped"
+                      : song.id === currentSong.id
+                        ? "current"
+                        : "pending";
+                  return (
+                    <div key={`${song.id}-${index}`} className={`flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-3 ${status === "current" ? "bg-primary/10" : ""}`}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenSong(song)}
+                        className="flex flex-1 min-w-0 items-center gap-3 rounded-lg text-left transition-colors hover:bg-muted/45 focus:outline-none focus:ring-2 focus:ring-primary/60 py-1"
+                        title={`Open ${song.title}`}
+                      >
+                        <span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
                           {index + 1}
                         </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{song.title}</div>
-                          <div className="text-xs text-muted-foreground truncate">{song.artist}</div>
-                        </div>
-                        {status === "played" && <Badge className="bg-green-600 text-white">Done</Badge>}
-                        {status === "skipped" && <Badge variant="outline">Skipped</Badge>}
-                        {status === "current" && <Badge className="bg-primary text-primary-foreground">Now</Badge>}
-                        {status !== "pending" && status !== "current" && (
-                          <Button variant="ghost" size="sm" onClick={() => onUndo(song.id)} className="h-8 text-xs">
-                            Undo
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium truncate block">{song.title}</span>
+                          <span className="text-xs text-muted-foreground truncate block">{song.artist}</span>
+                        </span>
+                      </button>
+                      {status === "played" && <Badge className="bg-green-600 text-white shrink-0">Done</Badge>}
+                      {status === "skipped" && <Badge variant="outline" className="shrink-0">Skipped</Badge>}
+                      {status === "current" && <Badge className="bg-primary text-primary-foreground shrink-0">Now</Badge>}
+                      {status !== "pending" && status !== "current" && (
+                        <Button variant="ghost" size="sm" onClick={() => onUndo(song.id)} className="h-8 text-xs shrink-0">
+                          Undo
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
@@ -1743,6 +1761,7 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
   const [sessionLoading, setSessionLoading] = useState(true);
   const [glanceMode, setGlanceMode] = useState(false);
   const [performanceMode, setPerformanceMode] = useState(defaultPerformance);
+  const performanceRouteLocked = defaultPerformance;
   const [showAudienceShare, setShowAudienceShare] = useState(false);
   const [showReadiness, setShowReadiness] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -1778,6 +1797,10 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
 
   const { toast } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    if (performanceRouteLocked) setPerformanceMode(true);
+  }, [performanceRouteLocked]);
 
   // Load synced song catalogue, including user-added songs and seed-song edits.
   useEffect(() => {
@@ -2708,16 +2731,17 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
           projectedEndLabel={projectedEndLabel}
           stageStartLabel={stageStartLabel}
           hasPdf={nextSongHasPdf}
-          onClose={() => setPerformanceMode(false)}
+          locked={performanceRouteLocked}
+          onClose={() => {
+            if (!performanceRouteLocked) setPerformanceMode(false);
+          }}
           onOpenSheet={() => {
             if (nextSongHasPdf && nextSong) {
-              setPerformanceMode(false);
               setFullscreenPdfSong(nextSong);
             }
           }}
           onAddNote={() => {
             if (nextSong) {
-              setPerformanceMode(false);
               setNoteModalSong(nextSong);
             }
           }}
@@ -2730,13 +2754,12 @@ export default function StagePage({ defaultPerformance = false }: { defaultPerfo
           onUndo={undo}
           onUndoLast={undoLastProgress}
           onOpenRequests={() => {
-            setPerformanceMode(false);
             setShowRequests(true);
           }}
           onOpenRecap={() => {
-            setPerformanceMode(false);
             setShowRecap(true);
           }}
+          onOpenSong={(song) => setCardSong(song)}
         />
       )}
 
