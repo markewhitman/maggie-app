@@ -12,6 +12,14 @@ export type GearCategory =
   | "other";
 
 export type GearControlType = "dial" | "slider" | "toggle";
+export type DiagramItemKind = "performer" | "mic" | "speaker" | "monitor" | "mixer" | "pedalboard" | "amp" | "power" | "stand" | "other";
+
+export interface GearPhoto {
+  id: string;
+  dataUrl: string;
+  caption?: string;
+  createdAt: string;
+}
 
 export interface GearControl {
   id: string;
@@ -30,6 +38,7 @@ export interface GearItem {
   brandModel?: string;
   notes?: string;
   tags: string[];
+  photo?: GearPhoto;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,7 +50,28 @@ export interface GearPreset {
   venueId?: string;
   situation?: string;
   notes?: string;
+  photo?: GearPhoto;
   controls: GearControl[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SetupDiagramItem {
+  id: string;
+  kind: DiagramItemKind;
+  label: string;
+  x: number;
+  y: number;
+  rotation?: number;
+}
+
+export interface SetupDiagram {
+  id: string;
+  venueId: string;
+  name: string;
+  notes?: string;
+  isDefault?: boolean;
+  items: SetupDiagramItem[];
   createdAt: string;
   updatedAt: string;
 }
@@ -50,6 +80,7 @@ const GEAR_KEY = "maggie_gear_items_v1";
 const PRESET_KEY = "maggie_gear_presets_v1";
 const VENUE_DEFAULTS_KEY = "maggie_gear_venue_default_presets_v1";
 const PACK_CHECK_KEY = "maggie_gear_pack_check_v1";
+const DIAGRAM_KEY = "maggie_gear_setup_diagrams_v1";
 
 export const GEAR_CATEGORIES: { value: GearCategory; label: string }[] = [
   { value: "guitar", label: "Guitar" },
@@ -179,12 +210,44 @@ export const gearStore = {
     write(PACK_CHECK_KEY, state);
   },
 
-  exportAll(): { items: GearItem[]; presets: GearPreset[]; venueDefaults: VenueDefaultPresetMap; packChecklist: PackChecklistState } {
+  getDiagrams(): SetupDiagram[] {
+    return read<SetupDiagram[]>(DIAGRAM_KEY, []);
+  },
+
+  getDiagramsForVenue(venueId: string): SetupDiagram[] {
+    return this.getDiagrams().filter((diagram) => diagram.venueId === venueId);
+  },
+
+  saveDiagram(data: Omit<SetupDiagram, "id" | "createdAt" | "updatedAt"> & { id?: string; createdAt?: string }): SetupDiagram {
+    const now = new Date().toISOString();
+    const diagram: SetupDiagram = {
+      ...data,
+      id: data.id ?? uid(),
+      createdAt: data.createdAt ?? now,
+      updatedAt: now,
+    };
+    const diagrams = this.getDiagrams();
+    const idx = diagrams.findIndex((existing) => existing.id === diagram.id);
+    const next = idx >= 0 ? diagrams.map((existing) => existing.id === diagram.id ? diagram : existing) : [diagram, ...diagrams];
+    write(DIAGRAM_KEY, diagram.isDefault ? next.map((item) => item.venueId === diagram.venueId ? { ...item, isDefault: item.id === diagram.id } : item) : next);
+    return diagram;
+  },
+
+  deleteDiagram(id: string): void {
+    write(DIAGRAM_KEY, this.getDiagrams().filter((diagram) => diagram.id !== id));
+  },
+
+  setDefaultDiagram(venueId: string, diagramId: string): void {
+    write(DIAGRAM_KEY, this.getDiagrams().map((diagram) => diagram.venueId === venueId ? { ...diagram, isDefault: diagram.id === diagramId, updatedAt: new Date().toISOString() } : diagram));
+  },
+
+  exportAll(): { items: GearItem[]; presets: GearPreset[]; venueDefaults: VenueDefaultPresetMap; packChecklist: PackChecklistState; diagrams: SetupDiagram[] } {
     return {
       items: this.getItems(),
       presets: this.getPresets(),
       venueDefaults: this.getVenueDefaults(),
       packChecklist: this.getPackChecklist(),
+      diagrams: this.getDiagrams(),
     };
   },
 };

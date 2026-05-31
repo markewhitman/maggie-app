@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import {
   Cable,
   CheckSquare,
@@ -42,7 +42,11 @@ import {
   type GearControl,
   type GearControlType,
   type GearItem,
+  type GearPhoto,
   type GearPreset,
+  type SetupDiagram,
+  type SetupDiagramItem,
+  type DiagramItemKind,
   type PackChecklistState,
   type VenueDefaultPresetMap,
 } from "@/lib/gear";
@@ -51,6 +55,279 @@ import type { Venue } from "@/lib/data";
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const DIAGRAM_ITEM_OPTIONS: { kind: DiagramItemKind; label: string; icon: string }[] = [
+  { kind: "performer", label: "Performer", icon: "🎤" },
+  { kind: "mic", label: "Mic", icon: "🎙️" },
+  { kind: "speaker", label: "Speaker", icon: "🔊" },
+  { kind: "monitor", label: "Monitor", icon: "▰" },
+  { kind: "mixer", label: "Mixer", icon: "🎚️" },
+  { kind: "pedalboard", label: "Pedalboard", icon: "▤" },
+  { kind: "amp", label: "Amp", icon: "▣" },
+  { kind: "power", label: "Power", icon: "⚡" },
+  { kind: "stand", label: "Stand", icon: "⌁" },
+  { kind: "other", label: "Other", icon: "•" },
+];
+
+function diagramKindLabel(kind: DiagramItemKind): string {
+  return DIAGRAM_ITEM_OPTIONS.find((item) => item.kind === kind)?.label ?? "Item";
+}
+
+function diagramKindIcon(kind: DiagramItemKind): string {
+  return DIAGRAM_ITEM_OPTIONS.find((item) => item.kind === kind)?.icon ?? "•";
+}
+
+async function imageFileToPhoto(file: File, existingCaption = ""): Promise<GearPhoto> {
+  const raw = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+  const resized = await new Promise<string>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1100;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      if (scale >= 1) {
+        resolve(raw);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(raw);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    img.onerror = () => resolve(raw);
+    img.src = raw;
+  });
+
+  return {
+    id: uid(),
+    dataUrl: resized,
+    caption: existingCaption || file.name.replace(/\.[^.]+$/, ""),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function PhotoField({
+  label,
+  photo,
+  onChange,
+}: {
+  label: string;
+  photo?: GearPhoto;
+  onChange: (photo?: GearPhoto) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const handleFile = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    setBusy(true);
+    try {
+      onChange(await imageFileToPhoto(file, photo?.caption));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <Label className="text-xs">{label}</Label>
+          <p className="text-[11px] text-muted-foreground">Stored locally as a compressed setup reference image.</p>
+        </div>
+        {photo && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => onChange(undefined)}>Remove</Button>}
+      </div>
+      {photo ? (
+        <div className="grid sm:grid-cols-[140px_1fr] gap-3 items-start">
+          <img src={photo.dataUrl} alt={photo.caption || label} className="h-28 w-full rounded-lg object-cover border border-border" />
+          <div className="space-y-2">
+            <Input value={photo.caption ?? ""} onChange={(e) => onChange({ ...photo, caption: e.target.value })} placeholder="Photo caption" />
+            <Input type="file" accept="image/*" onChange={(e) => handleFile(e.target.files?.[0])} disabled={busy} />
+          </div>
+        </div>
+      ) : (
+        <Input type="file" accept="image/*" onChange={(e) => handleFile(e.target.files?.[0])} disabled={busy} />
+      )}
+    </div>
+  );
+}
+
+function PhotoCard({ photo, label }: { photo?: GearPhoto; label?: string }) {
+  if (!photo) return null;
+  return (
+    <figure className="rounded-xl border border-border bg-muted/20 overflow-hidden">
+      <img src={photo.dataUrl} alt={photo.caption || label || "Gear photo"} className="h-40 w-full object-cover" />
+      {(photo.caption || label) && <figcaption className="px-3 py-2 text-xs text-muted-foreground">{photo.caption || label}</figcaption>}
+    </figure>
+  );
+}
+
+function DiagramPreview({ diagram, compact = false }: { diagram?: SetupDiagram; compact?: boolean }) {
+  if (!diagram) return null;
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border border-border bg-[linear-gradient(90deg,hsl(var(--muted)/0.35)_1px,transparent_1px),linear-gradient(0deg,hsl(var(--muted)/0.35)_1px,transparent_1px)] bg-[size:24px_24px] ${compact ? "h-56" : "h-72"}`}>
+      <div className="absolute left-3 top-3 rounded-full bg-background/90 px-2 py-1 text-[11px] font-semibold shadow-sm border border-border">{diagram.name}</div>
+      {diagram.items.map((item) => (
+        <div
+          key={item.id}
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-xl border border-primary/30 bg-background/90 px-2.5 py-1.5 text-xs shadow-sm min-w-16 text-center"
+          style={{ left: `${item.x}%`, top: `${item.y}%`, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)` }}
+        >
+          <div className="text-lg leading-none">{diagramKindIcon(item.kind)}</div>
+          <div className="font-semibold truncate max-w-28">{item.label}</div>
+        </div>
+      ))}
+      {diagram.items.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">No layout objects saved.</div>}
+    </div>
+  );
+}
+
+function DiagramForm({
+  initial,
+  venues,
+  preferredVenueId,
+  onSave,
+  onCancel,
+}: {
+  initial?: SetupDiagram;
+  venues: Venue[];
+  preferredVenueId?: string;
+  onSave: (diagram: SetupDiagram) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "Main stage setup");
+  const [venueId, setVenueId] = useState(initial?.venueId ?? preferredVenueId ?? venues[0]?.id ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [isDefault, setIsDefault] = useState(Boolean(initial?.isDefault));
+  const [items, setItems] = useState<SetupDiagramItem[]>(initial?.items ?? []);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initial?.items?.[0]?.id ?? null);
+  const selected = items.find((item) => item.id === selectedId);
+
+  const addItem = (kind: DiagramItemKind) => {
+    const option = DIAGRAM_ITEM_OPTIONS.find((item) => item.kind === kind);
+    const next: SetupDiagramItem = {
+      id: uid(),
+      kind,
+      label: option?.label ?? "Item",
+      x: 50,
+      y: 50,
+      rotation: 0,
+    };
+    setItems((prev) => [...prev, next]);
+    setSelectedId(next.id);
+  };
+
+  const moveSelected = (e: PointerEvent<HTMLDivElement>) => {
+    if (!dragId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(8, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100));
+    setItems((prev) => prev.map((item) => item.id === dragId ? { ...item, x, y } : item));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Diagram name *</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Venue</Label>
+          <Select value={venueId} onValueChange={setVenueId}>
+            <SelectTrigger><SelectValue placeholder="Choose venue" /></SelectTrigger>
+            <SelectContent>{venues.map((venue) => <SelectItem key={venue.id} value={venue.id}>{venue.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Diagram notes</Label>
+        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Power, doors, reflective walls, where the crowd sits…" />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={isDefault} onCheckedChange={(value) => setIsDefault(value === true)} />
+        Make this the default diagram for this venue
+      </label>
+
+      <div className="rounded-xl border border-border p-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold">Layout objects</div>
+            <div className="text-xs text-muted-foreground">Add an object, then drag it into position. Select an object to rename or rotate it.</div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {DIAGRAM_ITEM_OPTIONS.map((option) => (
+              <Button key={option.kind} type="button" variant="outline" size="sm" onClick={() => addItem(option.kind)}>
+                <span className="mr-1">{option.icon}</span>{option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div
+          className="relative h-[360px] rounded-2xl border border-border bg-[linear-gradient(90deg,hsl(var(--muted)/0.45)_1px,transparent_1px),linear-gradient(0deg,hsl(var(--muted)/0.45)_1px,transparent_1px)] bg-[size:24px_24px] overflow-hidden touch-none"
+          onPointerMove={moveSelected}
+          onPointerUp={() => setDragId(null)}
+          onPointerLeave={() => setDragId(null)}
+        >
+          <div className="absolute left-3 top-3 rounded-full bg-background/95 px-2 py-1 text-[11px] font-semibold shadow-sm border border-border">Stage / room top view</div>
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-xl border px-2.5 py-1.5 text-xs shadow-sm min-w-16 text-center bg-background/95 ${selectedId === item.id ? "border-primary ring-2 ring-primary/25" : "border-border"}`}
+              style={{ left: `${item.x}%`, top: `${item.y}%`, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}deg)` }}
+              onPointerDown={(e) => { e.preventDefault(); setSelectedId(item.id); setDragId(item.id); }}
+            >
+              <div className="text-lg leading-none">{diagramKindIcon(item.kind)}</div>
+              <div className="font-semibold truncate max-w-28">{item.label}</div>
+            </button>
+          ))}
+        </div>
+        {selected ? (
+          <div className="grid sm:grid-cols-[1fr_120px_auto] gap-2 items-center rounded-xl bg-muted/30 p-3">
+            <Input value={selected.label} onChange={(e) => setItems((prev) => prev.map((item) => item.id === selected.id ? { ...item, label: e.target.value } : item))} />
+            <Input type="number" value={selected.rotation ?? 0} onChange={(e) => setItems((prev) => prev.map((item) => item.id === selected.id ? { ...item, rotation: Number(e.target.value) } : item))} />
+            <Button type="button" variant="ghost" className="text-destructive" onClick={() => { setItems((prev) => prev.filter((item) => item.id !== selected.id)); setSelectedId(null); }}>Remove</Button>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-muted/30 p-3 text-sm text-muted-foreground">Select a layout object to edit its label or rotation.</div>
+        )}
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          className="flex-1"
+          disabled={!name.trim() || !venueId}
+          onClick={() => onSave({
+            id: initial?.id ?? uid(),
+            venueId,
+            name: name.trim(),
+            notes: notes.trim() || undefined,
+            isDefault,
+            items: items.map((item) => ({ ...item, label: item.label.trim() || diagramKindLabel(item.kind) })),
+            createdAt: initial?.createdAt ?? new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })}
+        >
+          {initial ? "Save diagram" : "Add diagram"}
+        </Button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
 }
 
 function sbToVenue(r: SbVenue): Venue {
@@ -171,6 +448,8 @@ interface VenueSetupBundle {
   presets: GearPreset[];
   gearItems: GearItem[];
   defaultPreset?: GearPreset;
+  diagrams: SetupDiagram[];
+  defaultDiagram?: SetupDiagram;
 }
 
 function uniqueGearForPresets(presets: GearPreset[], itemById: Map<string, GearItem>): GearItem[] {
@@ -198,6 +477,12 @@ function setupSheetPlainText(bundle: VenueSetupBundle): string {
   if (bundle.venue.notes) {
     lines.push("Venue notes:");
     lines.push(bundle.venue.notes);
+    lines.push("");
+  }
+  if (bundle.defaultDiagram) {
+    lines.push(`Default setup diagram: ${bundle.defaultDiagram.name}`);
+    if (bundle.defaultDiagram.notes) lines.push(bundle.defaultDiagram.notes);
+    bundle.defaultDiagram.items.forEach((item) => lines.push(`- ${diagramKindLabel(item.kind)}: ${item.label} (${Math.round(item.x)}%, ${Math.round(item.y)}%)`));
     lines.push("");
   }
   lines.push("Pack checklist:");
@@ -228,6 +513,27 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function printPhoto(photo?: GearPhoto, fallback = "Setup photo"): string {
+  if (!photo) return "";
+  return `<figure class="photo"><img src="${photo.dataUrl}" alt="${escapeHtml(photo.caption || fallback)}" />${photo.caption ? `<figcaption>${escapeHtml(photo.caption)}</figcaption>` : ""}</figure>`;
+}
+
+function printDiagram(diagram?: SetupDiagram): string {
+  if (!diagram) return "";
+  const items = diagram.items.map((item) => `
+    <div class="diagram-item" style="left:${item.x}%; top:${item.y}%; transform:translate(-50%,-50%) rotate(${item.rotation ?? 0}deg);">
+      <div class="diagram-icon">${escapeHtml(diagramKindIcon(item.kind))}</div>
+      <strong>${escapeHtml(item.label)}</strong>
+    </div>
+  `).join("");
+  return `
+    <section><h2>Setup diagram</h2>
+      ${diagram.notes ? `<p>${escapeHtml(diagram.notes).replace(/\n/g, "<br />")}</p>` : ""}
+      <div class="diagram"><span>${escapeHtml(diagram.name)}</span>${items}</div>
+    </section>
+  `;
 }
 
 function printSetupSheet(bundle: VenueSetupBundle): void {
@@ -272,6 +578,13 @@ function printSetupSheet(bundle: VenueSetupBundle): void {
   .preset { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; page-break-inside: avoid; }
   .preset h3 { margin: 0 0 6px; }
   .preset span { border: 1px solid #999; border-radius: 999px; padding: 2px 7px; font-size: 11px; text-transform: uppercase; }
+  .photo { margin: 10px 0; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; display: inline-block; max-width: 320px; vertical-align: top; }
+  .photo img { display: block; max-width: 320px; max-height: 220px; object-fit: cover; }
+  .photo figcaption { font-size: 12px; color: #666; padding: 6px 8px; }
+  .diagram { position: relative; height: 360px; border: 1px solid #ddd; border-radius: 14px; background-image: linear-gradient(90deg, #eee 1px, transparent 1px), linear-gradient(0deg, #eee 1px, transparent 1px); background-size: 24px 24px; overflow: hidden; page-break-inside: avoid; }
+  .diagram > span { position: absolute; left: 12px; top: 10px; font-size: 12px; color: #555; }
+  .diagram-item { position: absolute; min-width: 70px; text-align: center; border: 1px solid #999; border-radius: 10px; background: #fff; padding: 7px; font-size: 12px; }
+  .diagram-icon { font-size: 20px; line-height: 1; }
   @media print { body { margin: 18mm; } button { display: none; } }
 </style>
 </head>
@@ -281,6 +594,7 @@ function printSetupSheet(bundle: VenueSetupBundle): void {
   <p class="muted">Maggie setup sheet${bundle.venue.city ? ` · ${escapeHtml(bundle.venue.city)}` : ""}</p>
   ${defaultText}
   ${venueNotes}
+  ${printDiagram(bundle.defaultDiagram)}
   <section><h2>Pack checklist</h2><ul class="pack">${gearList}</ul></section>
   <section><h2>Setup presets</h2>${presetCards || "<p>No setup presets saved.</p>"}</section>
 </body>
@@ -353,6 +667,7 @@ function GearItemForm({
   const [brandModel, setBrandModel] = useState(initial?.brandModel ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [tags, setTags] = useState(initial?.tags.join(", ") ?? "");
+  const [photo, setPhoto] = useState<GearPhoto | undefined>(initial?.photo);
 
   return (
     <div className="space-y-4">
@@ -381,6 +696,7 @@ function GearItemForm({
         <Label className="text-xs">Default notes</Label>
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Cable, battery, setup quirks, room notes…" />
       </div>
+      <PhotoField label="Gear photo" photo={photo} onChange={setPhoto} />
       <div className="flex gap-2 pt-1">
         <Button
           className="flex-1"
@@ -393,6 +709,7 @@ function GearItemForm({
               brandModel: brandModel.trim() || undefined,
               notes: notes.trim() || undefined,
               tags: parseTags(tags),
+              photo,
               createdAt: initial?.createdAt ?? new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             });
@@ -427,6 +744,7 @@ function PresetForm({
   const [venueId, setVenueId] = useState(initial?.venueId ?? "any");
   const [situation, setSituation] = useState(initial?.situation ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [photo, setPhoto] = useState<GearPhoto | undefined>(initial?.photo);
   const [controls, setControls] = useState<GearControl[]>(initial?.controls ?? defaultControlsForCategory(initialGear?.category ?? "other"));
 
   const selectedGear = gearItems.find((item) => item.id === gearId);
@@ -484,6 +802,7 @@ function PresetForm({
         <Label className="text-xs">Setup notes</Label>
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="What worked here? Volume, EQ, monitor, placement…" />
       </div>
+      <PhotoField label="Preset or setup photo" photo={photo} onChange={setPhoto} />
 
       <div className="rounded-xl border border-border p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -546,6 +865,7 @@ function PresetForm({
             venueId: venueId === "any" ? undefined : venueId,
             situation: situation.trim() || undefined,
             notes: notes.trim() || undefined,
+            photo,
             controls: controls.map((control) => ({ ...control, label: control.label.trim() || "Control" })),
             createdAt: initial?.createdAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -602,6 +922,7 @@ function PresetCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        <PhotoCard photo={preset.photo} label={preset.name} />
         {preset.notes && <p className="text-sm text-muted-foreground leading-relaxed">{preset.notes}</p>}
         {preset.controls.length > 0 ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -618,6 +939,7 @@ function PresetCard({
 export default function GearPage() {
   const [items, setItems] = useState<GearItem[]>([]);
   const [presets, setPresets] = useState<GearPreset[]>([]);
+  const [diagrams, setDiagrams] = useState<SetupDiagram[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -632,12 +954,16 @@ export default function GearPage() {
   const [setupSheetVenueId, setSetupSheetVenueId] = useState<string | null>(null);
   const [copyPresetTarget, setCopyPresetTarget] = useState<GearPreset | null>(null);
   const [copyToVenueId, setCopyToVenueId] = useState("any");
+  const [showDiagramForm, setShowDiagramForm] = useState(false);
+  const [editingDiagram, setEditingDiagram] = useState<SetupDiagram | null>(null);
+  const [preferredDiagramVenueId, setPreferredDiagramVenueId] = useState<string | undefined>();
   const { toast } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const reload = () => {
     setItems(gearStore.getItems());
     setPresets(gearStore.getPresets());
+    setDiagrams(gearStore.getDiagrams());
     setVenueDefaults(gearStore.getVenueDefaults());
     setPackState(gearStore.getPackChecklist());
   };
@@ -676,6 +1002,9 @@ export default function GearPage() {
       const key = preset.venueId as string;
       byVenue.set(key, [...(byVenue.get(key) ?? []), preset]);
     });
+    diagrams.forEach((diagram) => {
+      if (!byVenue.has(diagram.venueId)) byVenue.set(diagram.venueId, []);
+    });
     return Array.from(byVenue.entries()).map(([venueId, venuePresets]) => {
       const defaultPresetId = venueDefaults[venueId];
       const defaultPreset = venuePresets.find((preset) => preset.id === defaultPresetId);
@@ -684,14 +1013,17 @@ export default function GearPage() {
         if (b.id === defaultPresetId) return 1;
         return a.name.localeCompare(b.name);
       });
+      const venueDiagrams = diagrams.filter((diagram) => diagram.venueId === venueId);
       return {
         venue: venues.find((venue) => venue.id === venueId),
         presets: sortedPresets,
         defaultPreset,
         gearItems: uniqueGearForPresets(sortedPresets, itemById),
+        diagrams: venueDiagrams,
+        defaultDiagram: venueDiagrams.find((diagram) => diagram.isDefault) ?? venueDiagrams[0],
       };
     }).filter((group) => group.venue);
-  }, [presets, venues, venueDefaults, itemById]);
+  }, [presets, venues, venueDefaults, itemById, diagrams]);
 
   const activeSetupGroup = useMemo(() => {
     if (!setupSheetVenueId) return null;
@@ -705,6 +1037,8 @@ export default function GearPage() {
       presets: activeSetupGroup.presets,
       gearItems: activeSetupGroup.gearItems,
       defaultPreset: activeSetupGroup.defaultPreset,
+      diagrams: activeSetupGroup.diagrams,
+      defaultDiagram: activeSetupGroup.defaultDiagram,
     };
   }, [activeSetupGroup]);
 
@@ -806,6 +1140,35 @@ export default function GearPage() {
     }
   };
 
+
+  const handleSaveDiagram = (diagram: SetupDiagram) => {
+    gearStore.saveDiagram(diagram);
+    reload();
+    setShowDiagramForm(false);
+    setEditingDiagram(null);
+    setPreferredDiagramVenueId(undefined);
+    toast({ title: "Setup diagram saved", description: diagram.name });
+  };
+
+  const handleDeleteDiagram = async (diagram: SetupDiagram) => {
+    const ok = await confirm({
+      title: "Delete this setup diagram?",
+      description: `This removes ${diagram.name} from your venue setup memory.`,
+      confirmLabel: "Delete diagram",
+      destructive: true,
+    });
+    if (!ok) return;
+    gearStore.deleteDiagram(diagram.id);
+    reload();
+    toast({ title: "Diagram deleted" });
+  };
+
+  const handleSetDefaultDiagram = (venueId: string, diagramId: string) => {
+    gearStore.setDefaultDiagram(venueId, diagramId);
+    reload();
+    toast({ title: "Default diagram saved" });
+  };
+
   const totalControls = presets.reduce((sum, preset) => sum + preset.controls.length, 0);
 
   return (
@@ -823,13 +1186,17 @@ export default function GearPage() {
           <Button disabled={items.length === 0} onClick={() => { setEditingPreset(null); setPreferredGearId(items[0]?.id); setShowPresetForm(true); }}>
             <Settings2 className="w-4 h-4 mr-1.5" /> Add preset
           </Button>
+          <Button variant="outline" disabled={venues.length === 0} onClick={() => { setEditingDiagram(null); setPreferredDiagramVenueId(venues[0]?.id); setShowDiagramForm(true); }}>
+            <MapPin className="w-4 h-4 mr-1.5" /> Add diagram
+          </Button>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Gear items</div><div className="text-2xl font-semibold mt-1">{items.length}</div></CardContent></Card>
         <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Presets</div><div className="text-2xl font-semibold mt-1">{presets.length}</div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Visual controls</div><div className="text-2xl font-semibold mt-1">{totalControls}</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Photos</div><div className="text-2xl font-semibold mt-1">{items.filter((item) => item.photo).length + presets.filter((preset) => preset.photo).length}</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Diagrams</div><div className="text-2xl font-semibold mt-1">{diagrams.length}</div></CardContent></Card>
         <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground uppercase tracking-wide">Venue setups</div><div className="text-2xl font-semibold mt-1">{venueSetupGroups.length}</div></CardContent></Card>
       </div>
 
@@ -864,6 +1231,7 @@ export default function GearPage() {
           <TabsTrigger value="presets">Setup presets</TabsTrigger>
           <TabsTrigger value="gear">Gear library</TabsTrigger>
           <TabsTrigger value="venues">Venue setups</TabsTrigger>
+          <TabsTrigger value="diagrams">Diagrams</TabsTrigger>
         </TabsList>
 
         <TabsContent value="presets" className="space-y-3">
@@ -914,6 +1282,7 @@ export default function GearPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      <PhotoCard photo={item.photo} label={item.name} />
                       {item.notes && <p className="text-sm text-muted-foreground leading-relaxed">{item.notes}</p>}
                       <Button variant="outline" size="sm" onClick={() => { setEditingPreset(null); setPreferredGearId(item.id); setShowPresetForm(true); }}>
                         <Plus className="h-3.5 w-3.5 mr-1.5" /> Add preset for this gear
@@ -930,7 +1299,7 @@ export default function GearPage() {
           {venueSetupGroups.length === 0 ? (
             <Card><CardContent className="py-14 text-center text-muted-foreground"><MapPin className="h-8 w-8 mx-auto mb-3 opacity-50" /><p className="font-medium">No venue-specific setups yet</p><p className="text-sm mt-1">Attach presets to venues to build soundcheck memory over time.</p></CardContent></Card>
           ) : (
-            venueSetupGroups.map(({ venue, presets: venuePresets, defaultPreset, gearItems }) => {
+            venueSetupGroups.map(({ venue, presets: venuePresets, defaultPreset, gearItems, diagrams: venueDiagrams, defaultDiagram }) => {
               const venueId = venue!.id;
               const checkedMap = packState[venueId] ?? {};
               const packedCount = gearItems.filter((gear) => checkedMap[gear.id]).length;
@@ -947,8 +1316,11 @@ export default function GearPage() {
                         <Button size="sm" variant="outline" onClick={() => setSetupSheetVenueId(venueId)}>
                           <ClipboardList className="h-3.5 w-3.5 mr-1.5" /> Setup sheet
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setEditingDiagram(null); setPreferredDiagramVenueId(venueId); setShowDiagramForm(true); }}>
+                          <Plus className="h-3.5 w-3.5 mr-1.5" /> Diagram
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => {
-                          const bundle: VenueSetupBundle = { venue: venue!, presets: venuePresets, gearItems, defaultPreset };
+                          const bundle: VenueSetupBundle = { venue: venue!, presets: venuePresets, gearItems, defaultPreset, diagrams: venueDiagrams, defaultDiagram };
                           printSetupSheet(bundle);
                         }}>
                           <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
@@ -958,6 +1330,15 @@ export default function GearPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {venue!.notes && <p className="text-sm text-muted-foreground">{venue!.notes}</p>}
+                    {defaultDiagram && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-semibold flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> Default setup diagram</div>
+                          <Button size="sm" variant="ghost" onClick={() => { setEditingDiagram(defaultDiagram); setShowDiagramForm(true); }}>Edit diagram</Button>
+                        </div>
+                        <DiagramPreview diagram={defaultDiagram} compact />
+                      </div>
+                    )}
 
                     <div className="rounded-xl border border-border bg-muted/25 p-3">
                       <div className="flex items-center justify-between gap-2 mb-3">
@@ -996,6 +1377,7 @@ export default function GearPage() {
                                 {!isDefault && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => handleSetVenueDefault(venueId, preset.id)}>Make default</Button>}
                               </div>
                             </div>
+                            <PhotoCard photo={preset.photo} label={preset.name} />
                             {preset.notes && <p className="text-xs text-muted-foreground leading-relaxed">{preset.notes}</p>}
                             <div className="grid sm:grid-cols-2 gap-2">
                               {preset.controls.slice(0, 4).map((control) => <ControlGraphic key={control.id} control={control} />)}
@@ -1010,6 +1392,45 @@ export default function GearPage() {
             })
           )}
         </TabsContent>
+
+        <TabsContent value="diagrams" className="space-y-3">
+          <div className="flex justify-end">
+            <Button disabled={venues.length === 0} onClick={() => { setEditingDiagram(null); setPreferredDiagramVenueId(venues[0]?.id); setShowDiagramForm(true); }}>
+              <Plus className="h-4 w-4 mr-1.5" /> Add setup diagram
+            </Button>
+          </div>
+          {diagrams.length === 0 ? (
+            <Card><CardContent className="py-14 text-center text-muted-foreground"><MapPin className="h-8 w-8 mx-auto mb-3 opacity-50" /><p className="font-medium">No setup diagrams yet</p><p className="text-sm mt-1">Create simple top-down layouts for speaker, mic, power, pedalboard, and mixer placement.</p></CardContent></Card>
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-3">
+              {diagrams.map((diagram) => {
+                const venue = venues.find((item) => item.id === diagram.venueId);
+                return (
+                  <Card key={diagram.id} className={diagram.isDefault ? "border-primary" : undefined}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <CardTitle className="text-base flex items-center gap-1.5">{diagram.name}{diagram.isDefault && <Star className="h-4 w-4 text-primary fill-current" />}</CardTitle>
+                          <CardDescription>{venue ? venueLabel(venue.id, venues) : "Saved venue"} · {diagram.items.length} object{diagram.items.length === 1 ? "" : "s"}</CardDescription>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingDiagram(diagram); setShowDiagramForm(true); }}><Edit3 className="h-3.5 w-3.5" /></Button>
+                          {!diagram.isDefault && <Button variant="ghost" size="icon" className="h-8 w-8" title="Make default" onClick={() => handleSetDefaultDiagram(diagram.venueId, diagram.id)}><Star className="h-3.5 w-3.5" /></Button>}
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteDiagram(diagram)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <DiagramPreview diagram={diagram} compact />
+                      {diagram.notes && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{diagram.notes}</p>}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
       </Tabs>
 
       <Dialog open={showGearForm} onOpenChange={(open) => { setShowGearForm(open); if (!open) setEditingGear(null); }}>
@@ -1032,6 +1453,23 @@ export default function GearPage() {
               preferredGearId={preferredGearId}
               onSave={handleSavePreset}
               onCancel={() => { setShowPresetForm(false); setEditingPreset(null); setPreferredGearId(undefined); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDiagramForm} onOpenChange={(open) => { setShowDiagramForm(open); if (!open) { setEditingDiagram(null); setPreferredDiagramVenueId(undefined); } }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="font-display italic">{editingDiagram ? "Edit Setup Diagram" : "Add Setup Diagram"}</DialogTitle></DialogHeader>
+          {venues.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">Add a venue before creating setup diagrams.</div>
+          ) : (
+            <DiagramForm
+              initial={editingDiagram ?? undefined}
+              venues={venues}
+              preferredVenueId={preferredDiagramVenueId}
+              onSave={handleSaveDiagram}
+              onCancel={() => { setShowDiagramForm(false); setEditingDiagram(null); setPreferredDiagramVenueId(undefined); }}
             />
           )}
         </DialogContent>
@@ -1076,6 +1514,18 @@ export default function GearPage() {
                 </CardContent>
               </Card>
 
+              {activeSetupBundle.defaultDiagram && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> Default setup diagram</CardTitle>
+                    <CardDescription>{activeSetupBundle.defaultDiagram.notes || "Top-down placement guide for this venue."}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <DiagramPreview diagram={activeSetupBundle.defaultDiagram} />
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2"><CheckSquare className="h-4 w-4 text-primary" /> Pack checklist</CardTitle>
@@ -1118,6 +1568,7 @@ export default function GearPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-3">
+                        <PhotoCard photo={preset.photo} label={preset.name} />
                         {preset.notes && <p className="text-sm text-muted-foreground whitespace-pre-wrap">{preset.notes}</p>}
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {preset.controls.map((control) => <ControlGraphic key={control.id} control={control} />)}

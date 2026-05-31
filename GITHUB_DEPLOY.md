@@ -313,3 +313,9 @@ Adds printable/copyable setup sheets, per-venue pack checklists, default venue s
 ## Phase 5.18B.1 — Print setup-sheet hotfix
 
 Phase 5.18B.1 fixes a blank `about:blank` print window issue in the Gear setup sheet print workflow. No Supabase migration or Edge Function deploy is required.
+
+## Phase 5.18C — Gear Photos + Setup Diagrams
+
+Gear now supports local gear/preset photos and simple venue setup diagrams. Diagrams are saved as JSON in localStorage and are included in backup export through the gear payload. Photos are compressed and stored locally; future versions should move setup photos to Supabase Storage if cross-device photo sync becomes important.
+
+No Supabase SQL migration or Edge Function redeploy is required for this phase.
