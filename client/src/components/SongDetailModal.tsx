@@ -136,6 +136,22 @@ function StarRating({ value }: { value: number }) {
   );
 }
 
+function getEditableAudioResources(resources?: SongAudioResource[] | null): SongAudioResource[] {
+  if (!Array.isArray(resources)) return [];
+  return resources.map((resource) => {
+    const type = resource?.type || "reference";
+    const url = String(resource?.url ?? "");
+    return {
+      id: resource?.id || `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      label: resource?.label ?? audioTypeLabel(type),
+      url,
+      provider: resource?.provider ?? (url.trim() ? detectAudioProvider(url) : ""),
+      notes: resource?.notes ?? "",
+    } satisfies SongAudioResource;
+  });
+}
+
 function AudioResourceCard({ resource }: { resource: SongAudioResource }) {
   return (
     <div className="rounded-xl border border-border bg-background/70 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -163,13 +179,13 @@ function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) =>
   const [form, setForm] = useState<Song>({ ...song, audioResources: normalizeAudioResources(song.audioResources) });
   const set = (field: keyof Song, value: any) => setForm((prev) => ({ ...prev, [field]: value }));
 
-  const audioResources = normalizeAudioResources(form.audioResources);
+  const audioResources = getEditableAudioResources(form.audioResources);
   const updateAudioResource = (index: number, patch: Partial<SongAudioResource>) => {
     const next = [...audioResources];
     const current = next[index];
     if (!current) return;
     const patched = { ...current, ...patch };
-    if (patch.url !== undefined) patched.provider = detectAudioProvider(patch.url);
+    if (patch.url !== undefined) patched.provider = patch.url.trim() ? detectAudioProvider(patch.url) : "";
     next[index] = patched;
     set("audioResources", next);
   };
@@ -183,9 +199,10 @@ function EditForm({ song, onSave, onCancel }: { song: Song; onSave: (s: Song) =>
     set("audioResources", audioResources.filter((_, i) => i !== index));
   };
   const saveEditedSong = () => {
-    const invalid = normalizeAudioResources(form.audioResources).find((resource) => resource.url && !isValidAudioUrl(resource.url));
+    const editableAudioResources = getEditableAudioResources(form.audioResources);
+    const invalid = editableAudioResources.find((resource) => resource.url.trim() && !isValidAudioUrl(resource.url));
     if (invalid) return;
-    onSave({ ...form, audioResources: normalizeAudioResources(form.audioResources) });
+    onSave({ ...form, audioResources: normalizeAudioResources(editableAudioResources) });
   };
 
   const handleTagsChange = (raw: string) => {
