@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck, Moon, Sun, Palette as PaletteIcon, Keyboard } from "lucide-react";
+import { Github, CheckCircle2, Wifi, FileText, Database, Download, Loader2, ShieldCheck, Moon, Sun, Palette as PaletteIcon, Keyboard, Eye, Focus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { createMaggieBackup, downloadBackup } from "@/lib/backup";
-import { PALETTES, useTheme } from "@/components/ThemeProvider";
+import { PALETTES, VISUAL_MODES, useTheme } from "@/components/ThemeProvider";
 import { PDF_SHORTCUTS, STAGE_SHORTCUTS, performanceControlsStore } from "@/lib/performanceControls";
 
 export default function SettingsPage() {
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
-  const { theme, palette, setTheme, setPalette } = useTheme();
+  const { theme, palette, visualMode, setTheme, setPalette, setVisualMode } = useTheme();
   const [performanceControlsEnabled, setPerformanceControlsEnabled] = useState(() =>
     performanceControlsStore.isEnabled(),
   );
@@ -114,6 +114,37 @@ export default function SettingsPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
+            <Eye className="w-3.5 h-3.5" /> Visual clarity
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {VISUAL_MODES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setVisualMode(option.id)}
+                className={`text-left rounded-xl border p-3 transition-colors ${
+                  visualMode === option.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-muted/20 hover:border-primary/50"
+                }`}
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  {option.id === "clear" ? <Focus className="w-4 h-4 text-primary" /> : <Eye className="w-4 h-4 text-muted-foreground" />}
+                  {option.name}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                  {option.description}
+                </div>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed mt-2">
+            Clear Cues is designed for faster visual scanning, stronger icon/shape separation, dyslexia-friendly letterforms, and lower cognitive load during a show.
+          </p>
         </div>
       </div>
 

@@ -82,6 +82,7 @@ import {
   Shuffle,
   Info,
   Music2,
+  Mic2,
   Clock,
   Keyboard,
   QrCode,
@@ -1017,11 +1018,11 @@ function PerformanceModeView({
   }, [currentSong, currentStatus, hasPdf, onAddNote, onClose, onMarkPlayed, onMarkSkipped, onOpenRequests, onOpenRecap, onOpenSheet, onUndo, onUndoLast, showShortcutHelp]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 performance-shell flex flex-col overflow-hidden">
+      <div className="performance-topbar shrink-0 px-4 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
-            Performance Mode
+          <div className="performance-label">
+            Live performance view
           </div>
           <div className="font-mono text-xl font-extrabold leading-tight">
             {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -1077,9 +1078,9 @@ function PerformanceModeView({
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {currentSong ? (
           <div className="mx-auto max-w-5xl space-y-4">
-            <div className="rounded-3xl border border-primary/35 bg-gradient-to-br from-primary/18 via-primary/8 to-transparent p-5 sm:p-8 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground mb-2">
-                Current / Next Song
+            <div className="performance-current-card rounded-3xl p-5 sm:p-8">
+              <div className="performance-label mb-2">
+                Current song
               </div>
               <h2 className="font-display text-4xl sm:text-6xl font-black italic leading-none tracking-tight">
                 {currentSong.title}
@@ -1103,19 +1104,19 @@ function PerformanceModeView({
               )}
 
               <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="stage-timing-tile">
+                <div className="performance-timing-tile">
                   <span className="stage-timing-label">Played</span>
                   <span className="stage-timing-value text-lg">{formatDuration(timePlayed)}</span>
                 </div>
-                <div className="stage-timing-tile">
+                <div className="performance-timing-tile">
                   <span className="stage-timing-label">Remaining</span>
                   <span className="stage-timing-value text-lg">{formatDuration(timeRemaining)}</span>
                 </div>
-                <div className="stage-timing-tile">
+                <div className="performance-timing-tile">
                   <span className="stage-timing-label">Set start</span>
                   <span className="stage-timing-value text-lg">{stageStartLabel ?? "—"}</span>
                 </div>
-                <div className="stage-timing-tile border-primary/35 bg-primary/10">
+                <div className="performance-timing-tile is-primary">
                   <span className="stage-timing-label">Projected end</span>
                   <span className="stage-timing-value text-lg">{projectedEndLabel ?? "—"}</span>
                 </div>
@@ -1123,28 +1124,28 @@ function PerformanceModeView({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <Button size="lg" variant="outline" onClick={onOpenSheet} disabled={!hasPdf} className="h-14 gap-2 text-base">
+              <Button size="lg" variant="outline" onClick={onOpenSheet} disabled={!hasPdf} className="performance-action performance-action-sheet gap-2">
                 <FileText className="w-5 h-5" /> Sheet
               </Button>
-              <Button size="lg" variant="outline" onClick={onAddNote} className="h-14 gap-2 text-base">
+              <Button size="lg" variant="outline" onClick={onAddNote} className="performance-action performance-action-note gap-2">
                 <ClipboardList className="w-5 h-5" /> Note
               </Button>
               {currentStatus !== "pending" ? (
-                <Button size="lg" variant="outline" onClick={() => onUndo(currentSong.id)} className="h-14 gap-2 text-base">
+                <Button size="lg" variant="outline" onClick={() => onUndo(currentSong.id)} className="performance-action performance-action-skip gap-2">
                   <RotateCcw className="w-5 h-5" /> Undo
                 </Button>
               ) : (
-                <Button size="lg" variant="outline" onClick={onMarkSkipped} className="h-14 gap-2 text-base">
+                <Button size="lg" variant="outline" onClick={onMarkSkipped} className="performance-action performance-action-skip gap-2">
                   <SkipForward className="w-5 h-5" /> Skip
                 </Button>
               )}
-              <Button size="lg" onClick={onMarkPlayed} className="h-14 gap-2 text-base font-bold" disabled={currentStatus !== "pending"}>
+              <Button size="lg" onClick={onMarkPlayed} className="performance-action performance-action-done gap-2" disabled={currentStatus !== "pending"}>
                 <CheckCircle2 className="w-5 h-5" /> Done
               </Button>
             </div>
 
             {upcoming.slice(1, 4).length > 0 && (
-              <div className="rounded-2xl border border-border bg-card px-4 py-3">
+              <div className="performance-set-card px-4 py-3">
                 <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground mb-2">Coming up</div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {upcoming.slice(1, 4).map((song, i) => (
@@ -1159,7 +1160,7 @@ function PerformanceModeView({
             )}
 
             {showFullSet && (
-              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="performance-set-card overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                   <div>
                     <div className="font-semibold">Full set fallback</div>
@@ -2311,20 +2312,30 @@ export default function StagePage() {
   const audienceScope = requestScopeId ?? session.setlistId;
   const audienceShareUrl = audienceUrlForScope(audienceScope);
   return (
-    <div>
+    <div className="stage-manager-shell">
       {ConfirmDialog}
       <StageShortcutHelpDialog open={showShortcutHelp} onClose={() => setShowShortcutHelp(false)} />
 
       {/* Header */}
       <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <h1 className="font-display font-bold text-xl italic mb-0.5">
-            Stage Manager
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {playedIds.length} played · {pendingSongs.length} remaining ·{" "}
-            {skippedIds.length} skipped
-          </p>
+        <div className="min-w-0 flex-1 stage-manager-banner">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <span className="view-chip"><Mic2 className="w-3.5 h-3.5" /> Control view</span>
+              <h1 className="font-display font-bold text-2xl italic mt-2 mb-0.5">
+                Stage Manager
+              </h1>
+              <p className="text-muted-foreground text-sm max-w-2xl">
+                Manage the set, requests, readiness, timing, and edits before or between songs.
+                Use <strong>Performance</strong> for the cleaner live view.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-primary/25 bg-primary/10 px-3 py-2 text-right min-w-[8rem]">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Set status</div>
+              <div className="text-lg font-extrabold leading-tight">{playedIds.length}/{orderedSongs.length}</div>
+              <div className="text-xs text-muted-foreground">songs complete</div>
+            </div>
+          </div>
 
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-3xl">
             <div className="rounded-xl border border-border bg-card px-3 py-2">
@@ -2388,7 +2399,7 @@ export default function StagePage() {
             onClick={() => {
               setShowRequests((p) => !p);
             }}
-            className="gap-1.5 relative"
+            className="gap-1.5 relative action-pill action-pill-request"
           >
             <Bell className="w-3.5 h-3.5" /> Requests
             {requests.length > 0 && (
@@ -2401,7 +2412,7 @@ export default function StagePage() {
             variant="outline"
             size="sm"
             onClick={() => setShowAudienceShare(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-request"
             title="Show audience QR code and scoped request link"
           >
             <QrCode className="w-3.5 h-3.5" /> Audience QR
@@ -2411,7 +2422,7 @@ export default function StagePage() {
             size="sm"
             onClick={() => setShowReadiness(true)}
             disabled={!currentSetlist}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-success"
             title="Check missing PDFs, durations, review flags, QR readiness, and backup status"
           >
             <ShieldCheck className="w-3.5 h-3.5" /> Ready
@@ -2420,7 +2431,7 @@ export default function StagePage() {
             variant="outline"
             size="sm"
             onClick={() => setShowRecap(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-note"
             title="Review show progress and save post-show notes"
           >
             <ClipboardList className="w-3.5 h-3.5" /> Recap
@@ -2429,7 +2440,7 @@ export default function StagePage() {
             variant="default"
             size="sm"
             onClick={() => setPerformanceMode(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill"
             title="Open simplified live performance view"
           >
             <Timer className="w-3.5 h-3.5" /> Performance
@@ -2438,7 +2449,7 @@ export default function StagePage() {
             variant="outline"
             size="sm"
             onClick={() => setShowEditSetlist(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-info"
           >
             <Pencil className="w-3.5 h-3.5" /> Edit Set
           </Button>
@@ -2446,7 +2457,7 @@ export default function StagePage() {
             variant={focusMode ? "default" : "outline"}
             size="sm"
             onClick={() => setFocusMode((p) => !p)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-info"
             title="Toggle larger, lower-distraction stage rows"
           >
             <Music2 className="w-3.5 h-3.5" /> Focus
@@ -2455,7 +2466,7 @@ export default function StagePage() {
             variant="outline"
             size="sm"
             onClick={() => setGlanceMode(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-info"
           >
             <Maximize2 className="w-3.5 h-3.5" /> At-a-Glance
           </Button>
@@ -2463,7 +2474,7 @@ export default function StagePage() {
             variant="outline"
             size="sm"
             onClick={() => setShowShortcutHelp(true)}
-            className="gap-1.5"
+            className="gap-1.5 action-pill action-pill-info"
             title="Show keyboard and Bluetooth pedal controls"
           >
             <Keyboard className="w-3.5 h-3.5" /> Keys
@@ -2473,7 +2484,7 @@ export default function StagePage() {
               variant="outline"
               size="sm"
               onClick={resetProgress}
-              className="gap-1.5"
+              className="gap-1.5 action-pill action-pill-warning"
               title="Mark completed/skipped songs as pending again"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Reset

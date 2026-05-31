@@ -8,6 +8,7 @@ export type Palette =
   | "sage"
   | "ocean"
   | "violet";
+export type VisualMode = "standard" | "clear";
 
 export const PALETTES: Array<{
   id: Palette;
@@ -53,8 +54,26 @@ export const PALETTES: Array<{
   },
 ];
 
+export const VISUAL_MODES: Array<{
+  id: VisualMode;
+  name: string;
+  description: string;
+}> = [
+  {
+    id: "standard",
+    name: "Standard",
+    description: "Balanced spacing and visual weight for everyday planning.",
+  },
+  {
+    id: "clear",
+    name: "Clear Cues",
+    description: "Larger labels, stronger outlines, calmer motion, and dyslexia-friendly typography.",
+  },
+];
+
 const THEME_KEY = "maggie_theme_mode";
 const PALETTE_KEY = "maggie_color_palette";
+const VISUAL_MODE_KEY = "maggie_visual_mode";
 
 function getInitialTheme(): Theme {
   try {
@@ -74,44 +93,61 @@ function getInitialPalette(): Palette {
   return "maggie";
 }
 
+function getInitialVisualMode(): VisualMode {
+  try {
+    const saved = localStorage.getItem(VISUAL_MODE_KEY) as VisualMode | null;
+    if (saved === "standard" || saved === "clear") return saved;
+  } catch {}
+  return "standard";
+}
+
 const ThemeContext = createContext<{
   theme: Theme;
   palette: Palette;
+  visualMode: VisualMode;
   setTheme: (theme: Theme) => void;
   setPalette: (palette: Palette) => void;
+  setVisualMode: (visualMode: VisualMode) => void;
   toggleTheme: () => void;
 }>({
   theme: "light",
   palette: "maggie",
+  visualMode: "standard",
   setTheme: () => {},
   setPalette: () => {},
+  setVisualMode: () => {},
   toggleTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
   const [palette, setPaletteState] = useState<Palette>(getInitialPalette);
+  const [visualMode, setVisualModeState] = useState<VisualMode>(getInitialVisualMode);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.setAttribute("data-palette", palette);
+    root.setAttribute("data-visual-mode", visualMode);
     try {
       localStorage.setItem(THEME_KEY, theme);
       localStorage.setItem(PALETTE_KEY, palette);
+      localStorage.setItem(VISUAL_MODE_KEY, visualMode);
     } catch {}
-  }, [theme, palette]);
+  }, [theme, palette, visualMode]);
 
   const value = useMemo(
     () => ({
       theme,
       palette,
+      visualMode,
       setTheme: setThemeState,
       setPalette: setPaletteState,
+      setVisualMode: setVisualModeState,
       toggleTheme: () =>
         setThemeState((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [theme, palette],
+    [theme, palette, visualMode],
   );
 
   return (

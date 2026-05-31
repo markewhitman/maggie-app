@@ -319,3 +319,11 @@ Phase 5.18B.1 fixes a blank `about:blank` print window issue in the Gear setup s
 Gear now supports local gear/preset photos and simple venue setup diagrams. Diagrams are saved as JSON in localStorage and are included in backup export through the gear payload. Photos are compressed and stored locally; future versions should move setup photos to Supabase Storage if cross-device photo sync becomes important.
 
 No Supabase SQL migration or Edge Function redeploy is required for this phase.
+
+
+### Phase 5.19 — Accessible UI Wayfinding + Performance View Distinction
+
+- Adds grouped, color-coded top navigation for faster feature recognition.
+- Adds Settings → Appearance → Visual Clarity mode for stronger outlines, larger labels, dyslexia-friendly typography, and lower cognitive load.
+- Makes Stage Manager feel like a control console and Performance Mode feel like a dedicated live performer cockpit.
+- No Supabase SQL migration or Edge Function redeploy is required.
