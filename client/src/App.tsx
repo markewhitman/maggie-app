@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -12,6 +13,16 @@ import AudiencePage from "@/pages/AudiencePage";
 import VenuesPage from "@/pages/VenuesPage";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/not-found";
+
+const HistoryPage = lazy(() => import("@/pages/HistoryPage"));
+
+function HistoryRoute() {
+  return (
+    <Suspense fallback={<div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading performance history…</div>}>
+      <HistoryPage />
+    </Suspense>
+  );
+}
 
 function RoutedContent() {
   const [location] = useLocation();
@@ -31,6 +42,7 @@ function RoutedContent() {
         <Route path="/setlists" component={SetlistPage} />
         <Route path="/stage" component={StagePage} />
         <Route path="/venues" component={VenuesPage} />
+        <Route path="/history" component={HistoryRoute} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>

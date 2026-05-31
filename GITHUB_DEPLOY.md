@@ -289,3 +289,9 @@ No Supabase SQL migration or Edge Function redeploy is required for this phase.
 Phase 5.16 adds a Stage/Performance Mode recap workflow. Performers can review played/skipped/pending songs, capture post-show notes, save per-song recap notes into performance history, and optionally finish/clear the active set after saving the recap.
 
 Show recaps are stored locally and included in backup exports. No Supabase SQL migration or Edge Function redeploy is required.
+
+## Phase 5.17 — Performance History Dashboard
+
+Phase 5.17 adds a new History page for saved show recaps. It includes show timeline cards, summary statistics, song trends, venue trends, completion/top-song charts, filters, performance-history JSON export, and recap deletion.
+
+Show recaps are still stored locally and included in Backup Export. The History page enriches those local recaps with Supabase songs, setlists, venues, performance notes, and request log data. No Supabase SQL migration or Edge Function redeploy is required.

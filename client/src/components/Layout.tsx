@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Music, ListMusic, Mic2, MapPin, Settings, Moon, Sun, Users } from "lucide-react";
+import { Music, ListMusic, Mic2, MapPin, Settings, Moon, Sun, Users, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/stage", label: "Stage", icon: Mic2 },
   { href: "/audience", label: "Audience", icon: Users },
   { href: "/venues", label: "Venues", icon: MapPin },
+  { href: "/history", label: "History", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
