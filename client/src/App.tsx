@@ -15,11 +15,20 @@ import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/not-found";
 
 const HistoryPage = lazy(() => import("@/pages/HistoryPage"));
+const GearPage = lazy(() => import("@/pages/GearPage"));
 
 function HistoryRoute() {
   return (
     <Suspense fallback={<div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading performance history…</div>}>
       <HistoryPage />
+    </Suspense>
+  );
+}
+
+function GearRoute() {
+  return (
+    <Suspense fallback={<div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Loading gear dashboard…</div>}>
+      <GearPage />
     </Suspense>
   );
 }
@@ -43,6 +52,7 @@ function RoutedContent() {
         <Route path="/stage" component={StagePage} />
         <Route path="/venues" component={VenuesPage} />
         <Route path="/history" component={HistoryRoute} />
+        <Route path="/gear" component={GearRoute} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>

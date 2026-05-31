@@ -295,3 +295,13 @@ Show recaps are stored locally and included in backup exports. No Supabase SQL m
 Phase 5.17 adds a new History page for saved show recaps. It includes show timeline cards, summary statistics, song trends, venue trends, completion/top-song charts, filters, performance-history JSON export, and recap deletion.
 
 Show recaps are still stored locally and included in Backup Export. The History page enriches those local recaps with Supabase songs, setlists, venues, performance notes, and request log data. No Supabase SQL migration or Edge Function redeploy is required.
+
+## Phase 5.18A Notes — Gear Dashboard + Venue Setup Memory
+
+Phase 5.18A adds a Gear page for cataloging performance gear and storing venue/situation-specific setup presets.
+
+- No Supabase SQL migration is required.
+- No Edge Function redeploy is required.
+- Gear data is currently local to the browser and included in Maggie backup exports.
+- New route: `#/gear`.
+- Visual settings include dial, slider, and toggle graphics for quick soundcheck recall.
