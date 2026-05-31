@@ -285,12 +285,30 @@ function printSetupSheet(bundle: VenueSetupBundle): void {
   <section><h2>Setup presets</h2>${presetCards || "<p>No setup presets saved.</p>"}</section>
 </body>
 </html>`;
-  const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=1100");
-  if (!win) return;
+  // Avoid `noopener` here. In Chrome, opening about:blank with `noopener` can return
+  // `null`, which leaves the new tab/window blank because we cannot write the
+  // generated setup-sheet HTML into it.
+  const win = window.open("", "_blank", "width=900,height=1100");
+  if (!win) {
+    window.alert("The setup sheet print window was blocked. Please allow popups for Maggie and try again.");
+    return;
+  }
+
   win.document.open();
   win.document.write(html);
   win.document.close();
-  win.focus();
+
+  // Give Chrome/Safari a moment to finish laying out the injected HTML before
+  // focusing/printing. This prevents the blank about:blank print window bug.
+  window.setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // Keep the printable setup sheet open even if automatic print fails.
+      win.focus();
+    }
+  }, 250);
 }
 
 function defaultControlsForCategory(category: GearCategory): GearControl[] {

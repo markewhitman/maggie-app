@@ -309,3 +309,7 @@ Phase 5.18A adds a Gear page for cataloging performance gear and storing venue/s
 ### Phase 5.18B — Gear Setup Sheets + Pack Checklist
 
 Adds printable/copyable setup sheets, per-venue pack checklists, default venue setups, and preset-copy-to-venue workflow. No Supabase SQL migration or Edge Function deploy is required.
+
+## Phase 5.18B.1 — Print setup-sheet hotfix
+
+Phase 5.18B.1 fixes a blank `about:blank` print window issue in the Gear setup sheet print workflow. No Supabase migration or Edge Function deploy is required.
